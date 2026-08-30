@@ -67,7 +67,7 @@ public class DeskPetService extends Service {
     private void showPet() {
         windowManager = (WindowManager)getSystemService(WINDOW_SERVICE);
         pet = new ImageView(this);
-        pet.setImageResource(R.drawable.pet_xuanyan);
+        pet.setImageResource(R.drawable.pet_yanya);
         pet.setScaleType(ImageView.ScaleType.FIT_CENTER);
         pet.setContentDescription("Yanya 桌宠");
         int width = dp(112), height = dp(166);
