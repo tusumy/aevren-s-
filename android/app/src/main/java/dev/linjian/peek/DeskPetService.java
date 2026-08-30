@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
@@ -76,7 +77,15 @@ public class DeskPetService extends Service {
         params.x = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, screenW - width), 0, Math.max(0, screenW - width));
         params.y = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_Y, screenH - height - dp(80)), dp(24), Math.max(dp(24), screenH - height));
         pet.setOnTouchListener(this::onTouch);
-        windowManager.addView(pet, params);
+        try {
+            windowManager.addView(pet, params);
+        } catch (RuntimeException error) {
+            AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false).apply();
+            Toast.makeText(this, "玄砚没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
+            pet = null;
+            stopSelf();
+            return;
+        }
         breathe();
     }
 
@@ -100,9 +109,12 @@ public class DeskPetService extends Service {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
+                pet.animate().scaleX(direction).scaleY(1f).setDuration(120).start();
+                if (dragging) { snapToBottomEdge(); savePosition(); } else react();
+                dragging = false;
+                return true;
             case MotionEvent.ACTION_CANCEL:
                 pet.animate().scaleX(direction).scaleY(1f).setDuration(120).start();
-                if (dragging) savePosition(); else react();
                 dragging = false;
                 return true;
             default: return false;
@@ -115,14 +127,19 @@ public class DeskPetService extends Service {
             if (!dragging) {
                 tick++;
                 int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
-                if (tick % 180 < 105) {
+                int phase = tick % 220;
+                if (phase < 110) {
                     params.x += direction * dp(1);
                     if (params.x <= 0 || params.x >= maxX) { params.x = clamp(params.x, 0, maxX); direction *= -1; }
                     pet.setScaleX(direction);
                     pet.setTranslationY((tick % 8 < 4) ? -dp(2) : 0);
                     windowManager.updateViewLayout(pet, params);
-                } else if (tick % 180 == 106) {
+                } else if (phase == 112) {
                     breathe();
+                } else if (phase == 150) {
+                    sleep();
+                } else if (phase == 205) {
+                    wakeUp();
                 }
             }
             handler.postDelayed(this, 55);
@@ -144,6 +161,22 @@ public class DeskPetService extends Service {
         Toast.makeText(this, "……戳我干嘛，阿毛。", Toast.LENGTH_SHORT).show();
     }
 
+    private void sleep() {
+        if (pet == null || dragging) return;
+        pet.animate().rotation(7f).translationY(dp(18)).scaleY(.78f).alpha(.86f).setDuration(650).start();
+    }
+
+    private void wakeUp() {
+        if (pet == null || dragging) return;
+        pet.animate().rotation(0f).translationY(0).scaleY(1f).alpha(1f).setDuration(350).start();
+    }
+
+    private void snapToBottomEdge() {
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        params.y = Math.max(dp(24), screenH - pet.getHeight() - dp(24));
+        windowManager.updateViewLayout(pet, params);
+    }
+
     private void savePosition() {
         AppPrefs.get(this).edit().putInt(AppPrefs.KEY_DESK_PET_X, params.x).putInt(AppPrefs.KEY_DESK_PET_Y, params.y).apply();
     }
@@ -153,6 +186,15 @@ public class DeskPetService extends Service {
         if (windowManager != null && pet != null) { try { windowManager.removeView(pet); } catch (Exception ignored) { } }
         pet = null; running = false;
         super.onDestroy();
+    }
+
+    @Override public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (pet == null || params == null || windowManager == null) return;
+        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
+        params.x = clamp(params.x, 0, maxX);
+        snapToBottomEdge();
+        savePosition();
     }
 
     private void createChannel() {
