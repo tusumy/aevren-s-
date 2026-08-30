@@ -69,7 +69,7 @@ public class DeskPetService extends Service {
         pet = new ImageView(this);
         pet.setImageResource(R.drawable.pet_xuanyan);
         pet.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        pet.setContentDescription("玄砚桌宠");
+        pet.setContentDescription("Yanya 桌宠");
         int width = dp(112), height = dp(166);
         params = new WindowManager.LayoutParams(
                 width, height,
@@ -88,7 +88,7 @@ public class DeskPetService extends Service {
             windowManager.addView(pet, params);
         } catch (RuntimeException error) {
             AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false).apply();
-            Toast.makeText(this, "玄砚没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Yanya 没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
             pet = null;
             stopSelf();
             return;
@@ -201,7 +201,7 @@ public class DeskPetService extends Service {
         tick = 108;
         pet.animate().rotation(-7f).translationY(-dp(13)).setDuration(150)
                 .withEndAction(() -> pet.animate().rotation(0f).translationY(0).setDuration(240).start()).start();
-        Toast.makeText(this, "……戳我干嘛，阿毛。", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Yanya 被你戳醒了。", Toast.LENGTH_SHORT).show();
     }
 
     private void sleep() {
@@ -265,7 +265,7 @@ public class DeskPetService extends Service {
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "掌心窗桌宠", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("让玄砚留在手机桌面");
+        channel.setDescription("让 Yanya 留在手机桌面");
         ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(channel);
     }
 
@@ -275,8 +275,8 @@ public class DeskPetService extends Service {
         Intent stop = new Intent(this, DeskPetService.class).setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-        return b.setSmallIcon(R.drawable.ic_heart_wave).setContentTitle("玄砚在桌面陪你")
-                .setContentText("点开掌心窗调整；拖动玄砚可以换位置")
+        return b.setSmallIcon(R.drawable.ic_heart_wave).setContentTitle("Yanya 在桌面陪你")
+                .setContentText("点开掌心窗调整；拖动 Yanya 可以换位置")
                 .setContentIntent(openPi).addAction(0, "收回", stopPi).setOngoing(true).build();
     }
 
