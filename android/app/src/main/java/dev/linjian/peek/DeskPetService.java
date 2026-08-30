@@ -84,8 +84,8 @@ public class DeskPetService extends Service {
         pet = new ImageView(this);
         spriteAtlas = BitmapFactory.decodeResource(getResources(), R.drawable.yanya_android_atlas);
         idleAnimation = createAnimation(0, 6, 180, true);
-        runRightAnimation = createAnimation(1, 8, 90, true);
-        runLeftAnimation = createAnimation(2, 8, 90, true);
+        runRightAnimation = createAnimation(1, new int[]{1, 3, 4, 5, 7}, 180, true);
+        runLeftAnimation = createAnimation(2, new int[]{1, 3, 4, 5, 7}, 180, true);
         waveAnimation = createAnimation(3, 4, 140, false);
         playAnimation(idleAnimation, 0);
         pet.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -167,7 +167,7 @@ public class DeskPetService extends Service {
                 }
 
                 if (walking) {
-                    walkOneStep();
+                    if (tick % 2 == 0) walkOneStep();
                 } else if (tick % 100 == 0) {
                     breathe();
                 }
@@ -203,7 +203,7 @@ public class DeskPetService extends Service {
         applyEdgePose();
         playAnimation((edge == EDGE_BOTTOM || edge == EDGE_RIGHT) ? runRightAnimation : runLeftAnimation,
                 (edge == EDGE_BOTTOM || edge == EDGE_RIGHT) ? 1 : 2);
-        pet.setTranslationY((tick % 8 < 4) ? -dp(2) : 0);
+        pet.setTranslationY(0);
         windowManager.updateViewLayout(pet, params);
     }
 
@@ -219,6 +219,18 @@ public class DeskPetService extends Service {
         int frameWidth = spriteAtlas.getWidth() / 8;
         int frameHeight = spriteAtlas.getHeight() / 4;
         for (int column = 0; column < frameCount; column++) {
+            Bitmap frame = Bitmap.createBitmap(spriteAtlas, column * frameWidth, row * frameHeight, frameWidth, frameHeight);
+            animation.addFrame(new BitmapDrawable(getResources(), frame), durationMs);
+        }
+        return animation;
+    }
+
+    private AnimationDrawable createAnimation(int row, int[] columns, int durationMs, boolean loop) {
+        AnimationDrawable animation = new AnimationDrawable();
+        animation.setOneShot(!loop);
+        int frameWidth = spriteAtlas.getWidth() / 8;
+        int frameHeight = spriteAtlas.getHeight() / 4;
+        for (int column : columns) {
             Bitmap frame = Bitmap.createBitmap(spriteAtlas, column * frameWidth, row * frameHeight, frameWidth, frameHeight);
             animation.addFrame(new BitmapDrawable(getResources(), frame), durationMs);
         }
