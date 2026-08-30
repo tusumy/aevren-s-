@@ -1,4 +1,10 @@
-# 掌心窗公开版 v0.3.7.3
+# 掌心窗公开版 v0.3.7.4
+
+## v0.3.7.4 玄砚桌宠
+
+- 设置页新增「桌面宠物」，授权悬浮窗后可让玄砚常驻安卓桌面。
+- 桌宠会沿屏幕边缘散步、碰边回头、停下呼吸发呆；支持点击反应、自由拖动与位置记忆。
+- 通知栏可随时收回桌宠；开启后重启手机或覆盖升级会自动恢复。
 
 ## v0.3.7.3 修复重点
 
@@ -89,15 +95,15 @@ update.json   版本更新信息
 
 1. 将源码包解压并覆盖到公开仓库根目录，确保 `.github`、`android`、`server`、`mcp` 位于根目录。
 2. 打开 GitHub 仓库 → **Actions** → **Build Android Public APK** → **Run workflow**。
-3. 构建成功后下载 `zhangxinchuang-public-v0.3.7.3-apk` artifact。
+3. 构建成功后下载 `zhangxinchuang-public-v0.3.7.4-apk` artifact。
 
 构建产物为：
 
 ```text
-android/Zhangxinchuang-public-v0.3.7.3.apk
+android/Zhangxinchuang-public-v0.3.7.4.apk
 ```
 
-版本名 `0.3.7.3`，版本码 `30703`。
+版本名 `0.3.7.4`，版本码 `30704`。
 
 ### 固定签名
 

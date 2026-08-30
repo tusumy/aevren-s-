@@ -135,7 +135,7 @@ public class MainActivity extends Activity {
         loadSettings();
         NowState.start(this);
 
-        DebugState.append(this, "掌心窗公开版 v0.3.7.3 已打开");
+        DebugState.append(this, "掌心窗公开版 v0.3.7.4 已打开");
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 13);
         serviceRunning = CompanionService.isRunning();
         updateUI();
@@ -250,9 +250,31 @@ public class MainActivity extends Activity {
         if (settings != null) {
             for (int i = settings.getChildCount() - 1; i >= 0; i--) {
                 Object tag = settings.getChildAt(i).getTag();
-                if ("dynamic_privacy".equals(tag) || "dynamic_diary_backup".equals(tag)) settings.removeViewAt(i);
+                if ("dynamic_privacy".equals(tag) || "dynamic_diary_backup".equals(tag) || "dynamic_desk_pet".equals(tag)) settings.removeViewAt(i);
             }
             settings.setPadding(0, 0, 0, dp(42));
+            Button deskPetButton = actionButton("桌面宠物  ›", false);
+            deskPetButton.setTag("dynamic_desk_pet");
+            LinearLayout deskPet = cardColumn();
+            deskPet.setTag("dynamic_desk_pet");
+            deskPet.setVisibility(View.GONE);
+            deskPet.addView(title("玄砚桌宠", 15));
+            deskPet.addView(body("让玄砚常驻手机桌面：会沿屏幕边缘散步、发呆，支持点击和拖动。", 9), matchWrapTop(6));
+            CheckBox deskPetToggle = new CheckBox(this);
+            deskPetToggle.setText("显示在手机桌面");
+            deskPetToggle.setTextSize(11);
+            deskPetToggle.setChecked(AppPrefs.get(this).getBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false));
+            deskPetToggle.setOnCheckedChangeListener((button, checked) -> setDeskPetEnabled(checked, deskPetToggle));
+            deskPet.addView(deskPetToggle, matchWrapTop(8));
+            Button deskPetPermission = actionButton((Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) ? "悬浮窗权限：已开启" : "打开悬浮窗权限", false);
+            deskPetPermission.setOnClickListener(v -> openOverlayPermissionSettings());
+            deskPet.addView(deskPetPermission, matchWrapTop(6));
+            Button deskPetStop = actionButton("把玄砚收回掌心窗", false);
+            deskPetStop.setOnClickListener(v -> { deskPetToggle.setChecked(false); stopService(new Intent(this, DeskPetService.class)); });
+            deskPet.addView(deskPetStop, matchWrapTop(6));
+            bindDrawer(deskPetButton, deskPet, "桌面宠物");
+            settings.addView(deskPetButton, 0, marginBottom(8));
+            settings.addView(deskPet, 1, marginBottom(8));
             Button privacyButton = actionButton("隐私与记录  ›", false);
             privacyButton.setTag("dynamic_privacy");
             LinearLayout privacy = cardColumn();
@@ -279,8 +301,8 @@ public class MainActivity extends Activity {
             privacy.addView(journeyToggle);
             privacy.addView(body("行动记录只展示脱敏摘要；今日轨迹不记录普通滑动、输入内容或屏幕文字。", 9));
             bindDrawer(privacyButton, privacy, "隐私与记录");
-            settings.addView(privacyButton, 0, marginBottom(8));
-            settings.addView(privacy, 1, marginBottom(8));
+            settings.addView(privacyButton, 2, marginBottom(8));
+            settings.addView(privacy, 3, marginBottom(8));
             Button diaryBackupButton = actionButton("日记本备份  ›", false);
             diaryBackupButton.setTag("dynamic_diary_backup");
             LinearLayout diaryBackup = cardColumn();
@@ -295,8 +317,26 @@ public class MainActivity extends Activity {
             diaryBackup.addView(importDiary, matchWrapTop(9));
             diaryBackup.addView(exportDiary, matchWrapTop(6));
             bindDrawer(diaryBackupButton, diaryBackup, "日记本备份");
-            settings.addView(diaryBackupButton, 2, marginBottom(8));
-            settings.addView(diaryBackup, 3, marginBottom(8));
+            settings.addView(diaryBackupButton, 4, marginBottom(8));
+            settings.addView(diaryBackup, 5, marginBottom(8));
+        }
+    }
+
+    private void setDeskPetEnabled(boolean enabled, CheckBox toggle) {
+        if (enabled && Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+            AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false).apply();
+            toggle.setChecked(false);
+            Toast.makeText(this, "先允许掌心窗显示悬浮窗", Toast.LENGTH_LONG).show();
+            openOverlayPermissionSettings();
+            return;
+        }
+        AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, enabled).apply();
+        Intent intent = new Intent(this, DeskPetService.class);
+        if (enabled) {
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent); else startService(intent);
+            Toast.makeText(this, "玄砚已经到手机桌面了", Toast.LENGTH_SHORT).show();
+        } else {
+            stopService(intent);
         }
     }
 
@@ -2242,7 +2282,7 @@ public class MainActivity extends Activity {
         getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", false).apply(); requestIgnoreBatteryOptimization();
         Intent intent = new Intent(this, CompanionService.class); intent.putExtra("server_url", url); intent.putExtra("token", token);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
-        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.7.3 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
+        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.7.4 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
     }
 
     private void stopCompanionService() { getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", true).apply(); stopService(new Intent(this, CompanionService.class)); DebugState.append(this, "已停止服务"); serviceRunning = false; updateUI(); }
