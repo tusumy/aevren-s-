@@ -25,6 +25,8 @@ import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import java.util.Random;
+
 public class DeskPetService extends Service {
     public static final String ACTION_STOP = "dev.linjian.peek.STOP_DESK_PET";
     private static final String CHANNEL_ID = "zhangxinchuang_desk_pet";
@@ -41,6 +43,9 @@ public class DeskPetService extends Service {
     private AnimationDrawable runLeftAnimation;
     private AnimationDrawable waveAnimation;
     private int animationRow = -1;
+    private final Random random = new Random();
+    private boolean walking;
+    private int behaviorTicks = 80;
     private static final int EDGE_BOTTOM = 0;
     private static final int EDGE_RIGHT = 1;
     private static final int EDGE_TOP = 2;
@@ -148,16 +153,23 @@ public class DeskPetService extends Service {
             if (pet == null) return;
             if (!dragging) {
                 tick++;
-                if (tick % 220 < 176) {
+                behaviorTicks--;
+                if (behaviorTicks <= 0) {
+                    walking = !walking;
+                    if (walking) {
+                        behaviorTicks = 50 + random.nextInt(61);
+                        animationRow = -1;
+                    } else {
+                        behaviorTicks = 125 + random.nextInt(206);
+                        playAnimation(idleAnimation, 0);
+                        breathe();
+                    }
+                }
+
+                if (walking) {
                     walkOneStep();
-                } else if (tick % 220 == 176) {
-                    playAnimation(idleAnimation, 0);
-                } else if (tick % 220 == 178) {
+                } else if (tick % 100 == 0) {
                     breathe();
-                } else if (tick % 220 == 195) {
-                    sleep();
-                } else if (tick % 220 == 214) {
-                    wakeUp();
                 }
             }
             handler.postDelayed(this, 55);
@@ -232,7 +244,8 @@ public class DeskPetService extends Service {
     }
 
     private void react() {
-        tick = 176;
+        walking = false;
+        behaviorTicks = 125 + random.nextInt(206);
         animationRow = -1;
         playAnimation(waveAnimation, 3);
         pet.animate().translationY(-dp(13)).setDuration(150)
