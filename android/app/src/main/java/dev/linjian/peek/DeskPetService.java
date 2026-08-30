@@ -31,7 +31,12 @@ public class DeskPetService extends Service {
     private WindowManager windowManager;
     private WindowManager.LayoutParams params;
     private ImageView pet;
-    private int direction = 1;
+    private static final int EDGE_BOTTOM = 0;
+    private static final int EDGE_RIGHT = 1;
+    private static final int EDGE_TOP = 2;
+    private static final int EDGE_LEFT = 3;
+
+    private int edge = EDGE_BOTTOM;
     private int tick;
     private boolean dragging;
     private float downRawX, downRawY;
@@ -76,6 +81,8 @@ public class DeskPetService extends Service {
         int screenH = getResources().getDisplayMetrics().heightPixels;
         params.x = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, screenW - width), 0, Math.max(0, screenW - width));
         params.y = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_Y, screenH - height - dp(80)), dp(24), Math.max(dp(24), screenH - height));
+        edge = nearestEdge(params.x, params.y, screenW - width, screenH - height);
+        applyEdgePose();
         pet.setOnTouchListener(this::onTouch);
         try {
             windowManager.addView(pet, params);
@@ -95,7 +102,7 @@ public class DeskPetService extends Service {
                 dragging = false;
                 downRawX = event.getRawX(); downRawY = event.getRawY();
                 downX = params.x; downY = params.y;
-                pet.animate().scaleX(direction * 1.06f).scaleY(1.06f).setDuration(90).start();
+                pet.animate().scaleX(1.06f).scaleY(1.06f).setDuration(90).start();
                 return true;
             case MotionEvent.ACTION_MOVE:
                 float dx = event.getRawX() - downRawX, dy = event.getRawY() - downRawY;
@@ -109,12 +116,12 @@ public class DeskPetService extends Service {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
-                pet.animate().scaleX(direction).scaleY(1f).setDuration(120).start();
-                if (dragging) { snapToBottomEdge(); savePosition(); } else react();
+                pet.animate().scaleX(1f).scaleY(1f).setDuration(120).start();
+                if (dragging) { snapToNearestEdge(); savePosition(); } else react();
                 dragging = false;
                 return true;
             case MotionEvent.ACTION_CANCEL:
-                pet.animate().scaleX(direction).scaleY(1f).setDuration(120).start();
+                pet.animate().scaleX(1f).scaleY(1f).setDuration(120).start();
                 dragging = false;
                 return true;
             default: return false;
@@ -126,25 +133,61 @@ public class DeskPetService extends Service {
             if (pet == null) return;
             if (!dragging) {
                 tick++;
-                int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
-                int phase = tick % 220;
-                if (phase < 110) {
-                    params.x += direction * dp(1);
-                    if (params.x <= 0 || params.x >= maxX) { params.x = clamp(params.x, 0, maxX); direction *= -1; }
-                    pet.setScaleX(direction);
-                    pet.setTranslationY((tick % 8 < 4) ? -dp(2) : 0);
-                    windowManager.updateViewLayout(pet, params);
-                } else if (phase == 112) {
+                if (tick % 220 < 176) {
+                    walkOneStep();
+                } else if (tick % 220 == 178) {
                     breathe();
-                } else if (phase == 150) {
+                } else if (tick % 220 == 195) {
                     sleep();
-                } else if (phase == 205) {
+                } else if (tick % 220 == 214) {
                     wakeUp();
                 }
             }
             handler.postDelayed(this, 55);
         }
     };
+
+    private void walkOneStep() {
+        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
+        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
+        int step = dp(1);
+
+        switch (edge) {
+            case EDGE_BOTTOM:
+                params.x += step;
+                if (params.x >= maxX) { params.x = maxX; edge = EDGE_RIGHT; }
+                break;
+            case EDGE_RIGHT:
+                params.y -= step;
+                if (params.y <= dp(24)) { params.y = dp(24); edge = EDGE_TOP; }
+                break;
+            case EDGE_TOP:
+                params.x -= step;
+                if (params.x <= 0) { params.x = 0; edge = EDGE_LEFT; }
+                break;
+            default:
+                params.y += step;
+                if (params.y >= maxY) { params.y = maxY; edge = EDGE_BOTTOM; }
+                break;
+        }
+
+        applyEdgePose();
+        pet.setTranslationY((tick % 8 < 4) ? -dp(2) : 0);
+        windowManager.updateViewLayout(pet, params);
+    }
+
+    private void applyEdgePose() {
+        if (pet == null) return;
+        float rotation;
+        switch (edge) {
+            case EDGE_RIGHT: rotation = -90f; break;
+            case EDGE_TOP: rotation = 180f; break;
+            case EDGE_LEFT: rotation = 90f; break;
+            default: rotation = 0f; break;
+        }
+        pet.setRotation(rotation);
+        pet.setScaleX(1f);
+    }
 
     private void breathe() {
         if (pet == null) return;
@@ -171,10 +214,30 @@ public class DeskPetService extends Service {
         pet.animate().rotation(0f).translationY(0).scaleY(1f).alpha(1f).setDuration(350).start();
     }
 
-    private void snapToBottomEdge() {
-        int screenH = getResources().getDisplayMetrics().heightPixels;
-        params.y = Math.max(dp(24), screenH - pet.getHeight() - dp(24));
+    private void snapToNearestEdge() {
+        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
+        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
+        edge = nearestEdge(params.x, params.y, maxX, maxY);
+        switch (edge) {
+            case EDGE_RIGHT: params.x = maxX; break;
+            case EDGE_TOP: params.y = dp(24); break;
+            case EDGE_LEFT: params.x = 0; break;
+            default: params.y = maxY; break;
+        }
+        applyEdgePose();
         windowManager.updateViewLayout(pet, params);
+    }
+
+    private int nearestEdge(int x, int y, int maxX, int maxY) {
+        int bottom = Math.abs(maxY - y);
+        int right = Math.abs(maxX - x);
+        int top = Math.abs(y - dp(24));
+        int left = Math.abs(x);
+        int nearest = Math.min(Math.min(bottom, right), Math.min(top, left));
+        if (nearest == right) return EDGE_RIGHT;
+        if (nearest == top) return EDGE_TOP;
+        if (nearest == left) return EDGE_LEFT;
+        return EDGE_BOTTOM;
     }
 
     private void savePosition() {
@@ -192,8 +255,10 @@ public class DeskPetService extends Service {
         super.onConfigurationChanged(newConfig);
         if (pet == null || params == null || windowManager == null) return;
         int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
+        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
         params.x = clamp(params.x, 0, maxX);
-        snapToBottomEdge();
+        params.y = clamp(params.y, dp(24), maxY);
+        snapToNearestEdge();
         savePosition();
     }
 
