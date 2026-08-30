@@ -344,7 +344,8 @@ public class DeskPetService extends Service {
         Intent stop = new Intent(this, DeskPetService.class).setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-        return b.setSmallIcon(R.drawable.ic_heart_wave).setContentTitle("Yanya 在桌面陪你")
+        Bitmap largeIcon = BitmapFactory.decodeResource(getResources(), R.drawable.ic_launcher_art);
+        return b.setSmallIcon(R.drawable.ic_heart_wave).setLargeIcon(largeIcon).setContentTitle("Yanya 在桌面陪你")
                 .setContentText("点开掌心窗调整；拖动 Yanya 可以换位置")
                 .setContentIntent(openPi).addAction(0, "收回", stopPi).setOngoing(true).build();
     }
