@@ -8,7 +8,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.PixelFormat;
+import android.graphics.drawable.AnimationDrawable;
+import android.graphics.drawable.BitmapDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -31,6 +35,12 @@ public class DeskPetService extends Service {
     private WindowManager windowManager;
     private WindowManager.LayoutParams params;
     private ImageView pet;
+    private Bitmap spriteAtlas;
+    private AnimationDrawable idleAnimation;
+    private AnimationDrawable runRightAnimation;
+    private AnimationDrawable runLeftAnimation;
+    private AnimationDrawable waveAnimation;
+    private int animationRow = -1;
     private static final int EDGE_BOTTOM = 0;
     private static final int EDGE_RIGHT = 1;
     private static final int EDGE_TOP = 2;
@@ -67,7 +77,12 @@ public class DeskPetService extends Service {
     private void showPet() {
         windowManager = (WindowManager)getSystemService(WINDOW_SERVICE);
         pet = new ImageView(this);
-        pet.setImageResource(R.drawable.pet_yanya);
+        spriteAtlas = BitmapFactory.decodeResource(getResources(), R.drawable.yanya_android_atlas);
+        idleAnimation = createAnimation(0, 6, 180, true);
+        runRightAnimation = createAnimation(1, 8, 90, true);
+        runLeftAnimation = createAnimation(2, 8, 90, true);
+        waveAnimation = createAnimation(3, 4, 140, false);
+        playAnimation(idleAnimation, 0);
         pet.setScaleType(ImageView.ScaleType.FIT_CENTER);
         pet.setContentDescription("Yanya 桌宠");
         int width = dp(112), height = dp(166);
@@ -135,6 +150,8 @@ public class DeskPetService extends Service {
                 tick++;
                 if (tick % 220 < 176) {
                     walkOneStep();
+                } else if (tick % 220 == 176) {
+                    playAnimation(idleAnimation, 0);
                 } else if (tick % 220 == 178) {
                     breathe();
                 } else if (tick % 220 == 195) {
@@ -172,21 +189,38 @@ public class DeskPetService extends Service {
         }
 
         applyEdgePose();
+        playAnimation((edge == EDGE_BOTTOM || edge == EDGE_RIGHT) ? runRightAnimation : runLeftAnimation,
+                (edge == EDGE_BOTTOM || edge == EDGE_RIGHT) ? 1 : 2);
         pet.setTranslationY((tick % 8 < 4) ? -dp(2) : 0);
         windowManager.updateViewLayout(pet, params);
     }
 
     private void applyEdgePose() {
         if (pet == null) return;
-        float rotation;
-        switch (edge) {
-            case EDGE_RIGHT: rotation = -90f; break;
-            case EDGE_TOP: rotation = 180f; break;
-            case EDGE_LEFT: rotation = 90f; break;
-            default: rotation = 0f; break;
-        }
-        pet.setRotation(rotation);
+        pet.setRotation(0f);
         pet.setScaleX(1f);
+    }
+
+    private AnimationDrawable createAnimation(int row, int frameCount, int durationMs, boolean loop) {
+        AnimationDrawable animation = new AnimationDrawable();
+        animation.setOneShot(!loop);
+        int frameWidth = spriteAtlas.getWidth() / 8;
+        int frameHeight = spriteAtlas.getHeight() / 4;
+        for (int column = 0; column < frameCount; column++) {
+            Bitmap frame = Bitmap.createBitmap(spriteAtlas, column * frameWidth, row * frameHeight, frameWidth, frameHeight);
+            animation.addFrame(new BitmapDrawable(getResources(), frame), durationMs);
+        }
+        return animation;
+    }
+
+    private void playAnimation(AnimationDrawable animation, int row) {
+        if (pet == null || animation == null || animationRow == row) return;
+        if (pet.getDrawable() instanceof AnimationDrawable) {
+            ((AnimationDrawable) pet.getDrawable()).stop();
+        }
+        animationRow = row;
+        pet.setImageDrawable(animation);
+        animation.start();
     }
 
     private void breathe() {
@@ -198,19 +232,27 @@ public class DeskPetService extends Service {
     }
 
     private void react() {
-        tick = 108;
-        pet.animate().rotation(-7f).translationY(-dp(13)).setDuration(150)
-                .withEndAction(() -> pet.animate().rotation(0f).translationY(0).setDuration(240).start()).start();
+        tick = 176;
+        animationRow = -1;
+        playAnimation(waveAnimation, 3);
+        pet.animate().translationY(-dp(13)).setDuration(150)
+                .withEndAction(() -> pet.animate().translationY(0).setDuration(240).start()).start();
+        handler.postDelayed(() -> {
+            animationRow = -1;
+            playAnimation(idleAnimation, 0);
+        }, 700);
         Toast.makeText(this, "Yanya 被你戳醒了。", Toast.LENGTH_SHORT).show();
     }
 
     private void sleep() {
         if (pet == null || dragging) return;
-        pet.animate().rotation(7f).translationY(dp(18)).scaleY(.78f).alpha(.86f).setDuration(650).start();
+        playAnimation(idleAnimation, 0);
+        pet.animate().translationY(dp(10)).scaleY(.88f).alpha(.86f).setDuration(650).start();
     }
 
     private void wakeUp() {
         if (pet == null || dragging) return;
+        playAnimation(idleAnimation, 0);
         pet.animate().rotation(0f).translationY(0).scaleY(1f).alpha(1f).setDuration(350).start();
     }
 
@@ -247,7 +289,9 @@ public class DeskPetService extends Service {
     @Override public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
         if (windowManager != null && pet != null) { try { windowManager.removeView(pet); } catch (Exception ignored) { } }
-        pet = null; running = false;
+        pet = null;
+        if (spriteAtlas != null) { spriteAtlas.recycle(); spriteAtlas = null; }
+        running = false;
         super.onDestroy();
     }
 
