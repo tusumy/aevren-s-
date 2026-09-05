@@ -1,4 +1,4 @@
-# 掌心窗公开版安装与部署流程（v0.3.7.4）
+# 掌心窗公开版安装与部署流程（v0.3.8.4）
 
 ## 1. 选择部署方式
 
@@ -139,7 +139,7 @@ http://127.0.0.1:8787/sse
 构建产物：
 
 ```text
-android/Zhangxinchuang-public-v0.3.7.4.apk
+android/Zhangxinchuang-public-v0.3.8.4.apk
 ```
 
 公开版使用固定签名 `android/signing/zhangxinchuang-public-release.p12`，不要删除或替换。

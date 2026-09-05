@@ -1,17 +1,20 @@
 {
-  "latest_version_name": "0.3.7.4",
-  "latest_version_code": 30704,
-  "apk_url": "https://github.com/linzhi-524/linjian-peek-public/releases/download/v0.3.7.4/Zhangxinchuang-public-v0.3.7.4.apk",
+  "latest_version_name": "0.3.8.4",
+  "latest_version_code": 30804,
+  "apk_url": "https://github.com/linzhi-524/linjian-peek-public/releases/download/v0.3.8.4/Zhangxinchuang-public-v0.3.8.4.apk",
   "sha256": "",
   "required": false,
+  "notes": [
+    "修复守护页未显示专注模式入口：安心规则中新增「专注模式」卡片，支持查看状态、5 分钟测试和默认规则。",
+    "新增 Focus Mode 专注模式：AI 可通过 MCP 开启、结束和查询全机专注。",
+    "专注锁定页支持“留言给他”和默认一次 1 分钟应急放行。",
+    "MCP /health 明确暴露 focus_tools 和专注工具清单，降低新增工具不显示的问题。",
+    "修复 rename_diary_book：缺少 book_id 时可用 old_name 或唯一日记本自动重命名。",
+    "版本号升级到 v0.3.8.4 / 30804，固定签名保持不变。"
+  ],
   "changelog": [
     "设置页新增玄砚桌宠，可常驻安卓桌面、自动散步、点击互动、拖动并记忆位置。",
-    "今日页「此刻状态」卡片新增媒体状态，开启通知使用权后可显示正在播放的歌曲/音频、歌手、播放状态和来源 App。",
-    "修复归电来电页接通后没有打开归电设置指定包名的问题。",
-    "修复陪伴页「xx 的行动」不显示 AI/MCP 工具调用记录的问题。",
-    "MCP 行动同步写入统一行动日志，手机端合并本地与远端行动记录。",
-    "Railway 文档改为手动双服务部署，移除一键模板引导，避免把 server 域名误填为 MCP 地址。",
-    "server 收到 /mcp 或 /sse 时会返回更明确的 wrong service 提示。",
-    "固定签名保持不变，支持覆盖安装旧版本。"
+    "修复日记写入 book_id 兜底：旧窗口或计划任务带旧 ID 时，单本日记会自动写入当前日记本。",
+    "write_diary_entry 支持 book_id 留空、book_name 兜底；无日记本时自动创建默认日记本，多本无法判断时返回候选项。"
   ]
 }
