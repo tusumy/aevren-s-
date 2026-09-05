@@ -63,7 +63,7 @@ public class AppPrefs {
     public static final String KEY_HOME_THRESHOLD_MIN = "home_mode_threshold_min";
     public static final String KEY_HOME_COOLDOWN_MIN = "home_mode_cooldown_min";
     public static final String KEY_HOME_TARGET_PACKAGE = "home_mode_target_package";
-    public static final String DEFAULT_HOME_TARGET_PACKAGE = "";
+    public static final String DEFAULT_HOME_TARGET_PACKAGE = "com.openai.chatgpt";
 
     public static SharedPreferences get(Context ctx) { return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
 
@@ -241,6 +241,7 @@ public class AppPrefs {
 
     public static Map<String, String> defaultApps() {
         LinkedHashMap<String, String> apps = new LinkedHashMap<>();
+        apps.put("ChatGPT", "com.openai.chatgpt");
         apps.put("小红书", "com.xingin.xhs");
         apps.put("微信", "com.tencent.mm");
         apps.put("QQ", "com.tencent.mobileqq");
@@ -305,6 +306,7 @@ public class AppPrefs {
         String key = raw.toLowerCase(Locale.US);
         String def;
         switch (key) {
+            case "chatgpt": case "chat gpt": def = "com.openai.chatgpt"; break;
             case "xiaohongshu": case "xhs": case "小红书": def = "com.xingin.xhs"; break;
             case "wechat": case "微信": def = "com.tencent.mm"; break;
             case "qq": def = "com.tencent.mobileqq"; break;
