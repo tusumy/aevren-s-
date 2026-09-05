@@ -135,7 +135,7 @@ public class MainActivity extends Activity {
         loadSettings();
         NowState.start(this);
 
-        DebugState.append(this, "掌心窗公开版 v0.3.7.4 已打开");
+        DebugState.append(this, "掌心窗公开版 v0.3.8.4 已打开");
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 13);
         serviceRunning = CompanionService.isRunning();
         updateUI();
@@ -990,7 +990,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(8), 0, dp(8), 0);
         EditText name = new EditText(this); name.setHint("日记本名字"); name.setText(book.optString("name", "")); box.addView(name);
         EditText subtitle = new EditText(this); subtitle.setHint("封面小字"); subtitle.setText(book.optString("subtitle", "")); box.addView(subtitle);
-        new AlertDialog.Builder(this).setTitle("重命名日记本").setView(box).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> { DiaryState.renameBook(this, diaryBookId, name.getText().toString(), subtitle.getText().toString()); if (diaryContentOpen) replaceScrollContent(sectionSee, buildDiaryContentPage(null)); else showDiaryHomePage(); }).show();
+        new AlertDialog.Builder(this).setTitle("重命名日记本").setView(box).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> { DiaryState.renameBook(this, diaryBookId, book.optString("name", ""), name.getText().toString(), subtitle.getText().toString()); if (diaryContentOpen) replaceScrollContent(sectionSee, buildDiaryContentPage(null)); else showDiaryHomePage(); }).show();
     }
 
     private void showDiaryCoverMenu() {
@@ -1023,6 +1023,9 @@ public class MainActivity extends Activity {
 
         root.addView(label("安心规则", 9), marginBottom(6));
         root.addView(guardSettingBlock("应用门禁", "需要时轻轻守住", R.drawable.ic_shield, drawerAppGate), marginBottom(7));
+        root.addView(actionSettingBlock("专注模式", "全机专注、应急放行与留言", R.drawable.ic_shield, this::showFocusModePanel), marginBottom(7));
+        root.addView(actionSettingBlock("小金库", "预算、记账与花钱审批", R.drawable.ic_wallet, () -> startActivity(new Intent(this, WalletActivity.class))), marginBottom(7));
+        root.addView(actionSettingBlock("今天吃什么", "常点外卖、预算与小金库联动", R.drawable.ic_wallet, () -> startActivity(new Intent(this, TakeoutActivity.class))), marginBottom(7));
         root.addView(guardSettingBlock("主动提醒", "电量、休息与喝水", R.drawable.ic_clock, drawerReminder), marginBottom(7));
         root.addView(guardSettingBlock("周期提醒", AppPrefs.userName(this) + "的周期与关怀", R.drawable.ic_heart_wave, drawerCycle), marginBottom(11));
 
@@ -1049,6 +1052,65 @@ public class MainActivity extends Activity {
         return root;
     }
 
+    private void showFocusModePanel() {
+        try {
+            JSONObject state = FocusMode.config(this);
+            boolean active = state.optBoolean("active", false);
+            String info = FocusMode.pretty(this)
+                    + "\n\n应用门禁只锁指定 App；专注模式是全机专注，适合学习、睡觉或暂时离开手机。"
+                    + "\n\nMCP 工具：get_focus_status / start_focus_mode / end_focus_mode / set_focus_plan / reply_focus_request / approve_focus_unlock / deny_focus_unlock";
+            AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                    .setTitle("专注模式")
+                    .setMessage(info)
+                    .setNegativeButton("关闭", null);
+
+            if (active) {
+                builder.setPositiveButton("查看锁定页", (dialog, which) -> FocusMode.startLockActivity(this));
+                builder.setNeutralButton("结束专注", (dialog, which) -> {
+                    try {
+                        FocusMode.handleCommand(this, new JSONObject().put("action", "end_focus_mode").put("reason", "manual_from_guard_page"));
+                        Toast.makeText(this, "专注模式已结束", Toast.LENGTH_SHORT).show();
+                        updateUI();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "结束失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+                    }
+                });
+            } else {
+                builder.setPositiveButton("测试 5 分钟", (dialog, which) -> {
+                    try {
+                        JSONObject cmd = new JSONObject();
+                        cmd.put("action", "start_focus_mode");
+                        cmd.put("duration_minutes", 5);
+                        cmd.put("goal", "测试专注模式");
+                        cmd.put("message", "这 5 分钟先交给掌心窗守住。需要时可以留言给他，也有 1 次应急放行。");
+                        cmd.put("emergency_total", 1);
+                        cmd.put("emergency_minutes", 1);
+                        FocusMode.handleCommand(this, cmd);
+                        Toast.makeText(this, "已开启 5 分钟专注测试", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "开启失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+                    }
+                });
+                builder.setNeutralButton("保存默认规则", (dialog, which) -> {
+                    try {
+                        JSONObject cmd = new JSONObject();
+                        cmd.put("action", "set_focus_plan");
+                        cmd.put("goal", "先离开手机");
+                        cmd.put("message", "你提前把这段时间交给我了，我会帮你守住。");
+                        cmd.put("emergency_total", 1);
+                        cmd.put("emergency_minutes", 1);
+                        FocusMode.handleCommand(this, cmd);
+                        Toast.makeText(this, "专注模式默认规则已保存", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "保存失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+            builder.show();
+        } catch (Exception e) {
+            Toast.makeText(this, "专注模式读取失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+        }
+    }
 
     private void showGuardianCalendarDetailPage() {
         guardianCalendarDetailOpen = true;
@@ -2282,7 +2344,7 @@ public class MainActivity extends Activity {
         getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", false).apply(); requestIgnoreBatteryOptimization();
         Intent intent = new Intent(this, CompanionService.class); intent.putExtra("server_url", url); intent.putExtra("token", token);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
-        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.7.4 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
+        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.8.4 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
     }
 
     private void stopCompanionService() { getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", true).apply(); stopService(new Intent(this, CompanionService.class)); DebugState.append(this, "已停止服务"); serviceRunning = false; updateUI(); }
