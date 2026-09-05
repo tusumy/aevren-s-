@@ -9,6 +9,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 
 import org.json.JSONObject;
@@ -366,9 +368,11 @@ public class GuidianState {
             full.putExtra("prompt", prompt);
             PendingIntent fullPi = PendingIntent.getActivity(ctx, 230723, full, Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT : PendingIntent.FLAG_UPDATE_CURRENT);
             Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? new Notification.Builder(ctx, CHANNEL_ID) : new Notification.Builder(ctx);
+            Bitmap largeIcon = BitmapFactory.decodeResource(ctx.getResources(), R.drawable.ic_launcher_art);
             Notification n = b.setContentTitle(AppPrefs.companionName(ctx) + "来电")
                     .setContentText(prompt)
                     .setSmallIcon(android.R.drawable.sym_call_incoming)
+                    .setLargeIcon(largeIcon)
                     .setContentIntent(fullPi)
                     .setFullScreenIntent(fullPi, prefs(ctx).getBoolean(KEY_FULLSCREEN, true))
                     .setCategory(Notification.CATEGORY_CALL)

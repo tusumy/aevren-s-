@@ -10,6 +10,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -480,10 +482,12 @@ public class CompanionService extends Service {
                 nm.createNotificationChannel(channel);
             }
             Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? new Notification.Builder(ctx, REMINDER_CHANNEL_ID) : new Notification.Builder(ctx);
+            Bitmap largeIcon = BitmapFactory.decodeResource(ctx.getResources(), R.drawable.ic_launcher_art);
             Notification n = builder
                     .setContentTitle(safeTitle)
                     .setContentText(safeMessage)
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setLargeIcon(largeIcon)
                     .setContentIntent(pi)
                     .setAutoCancel(true)
                     .setCategory(Notification.CATEGORY_MESSAGE)
@@ -546,9 +550,11 @@ public class CompanionService extends Service {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
+        Bitmap largeIcon = BitmapFactory.decodeResource(getResources(), R.drawable.ic_launcher_art);
         return builder.setContentTitle("掌心窗运行中")
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_heart_wave)
+                .setLargeIcon(largeIcon)
                 .setOngoing(true)
                 .build();
     }
