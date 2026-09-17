@@ -107,7 +107,7 @@ public class DeskPetService extends Service {
         bubble.setScaleY(.94f);
         bubble.setVisibility(View.INVISIBLE);
         bubble.setMaxLines(1);
-        bubble.setMaxWidth(dp(118));
+        bubble.setMaxWidth(dp(126));
         bubble.setBackground(bubbleBg);
         if (Build.VERSION.SDK_INT >= 21) bubble.setElevation(dp(5));
 
@@ -135,13 +135,13 @@ public class DeskPetService extends Service {
         pet.setBackgroundColor(Color.TRANSPARENT);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
-        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(148), dp(100),
+        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(118), dp(118),
                 Gravity.BOTTOM | Gravity.END);
-        petLp.rightMargin = 0;
+        petLp.rightMargin = dp(8);
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        int width = dp(154), height = dp(145);
+        int width = dp(150), height = dp(164);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
@@ -175,8 +175,8 @@ public class DeskPetService extends Service {
 
     private GradientDrawable bubbleDrawable() {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(0xF4F3FAF6);
-        d.setStroke(dp(1), 0xFF9DBEAE);
+        d.setColor(0xA8EAF7EE);
+        d.setStroke(dp(1), 0xB86EB889);
         d.setCornerRadius(dp(15));
         return d;
     }
@@ -295,7 +295,7 @@ public class DeskPetService extends Service {
                     .withEndAction(() -> {
                         if (bubbleTail != null) bubbleTail.setVisibility(View.INVISIBLE);
                     }).start();
-        }, 1550L);
+        }, 1700L);
     }
 
     private final Runnable idleLoop = new Runnable() {
