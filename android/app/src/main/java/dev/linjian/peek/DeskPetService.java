@@ -92,10 +92,11 @@ public class DeskPetService extends Service {
         root = new FrameLayout(this);
         root.setClipChildren(false);
         root.setClipToPadding(false);
+        root.setBackgroundColor(Color.TRANSPARENT);
 
         GradientDrawable bubbleBg = bubbleDrawable();
         bubble = new TextView(this);
-        bubble.setTextColor(0xFF383641);
+        bubble.setTextColor(0xFF314A42);
         bubble.setTextSize(11.5f);
         bubble.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         bubble.setGravity(Gravity.CENTER);
@@ -131,6 +132,7 @@ public class DeskPetService extends Service {
         root.addView(bubbleTail, tailLp);
 
         pet = new DeskPetView(this);
+        pet.setBackgroundColor(Color.TRANSPARENT);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
         FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(148), dp(100),
@@ -173,8 +175,8 @@ public class DeskPetService extends Service {
 
     private GradientDrawable bubbleDrawable() {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(0xF4F7F3FB);
-        d.setStroke(dp(1), 0xFFB9AED2);
+        d.setColor(0xF4F3FAF6);
+        d.setStroke(dp(1), 0xFF9DBEAE);
         d.setCornerRadius(dp(15));
         return d;
     }
