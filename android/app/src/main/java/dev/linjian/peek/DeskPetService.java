@@ -11,6 +11,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
@@ -20,6 +21,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -40,6 +42,7 @@ public class DeskPetService extends Service {
     private FrameLayout root;
     private DeskPetView pet;
     private TextView bubble;
+    private View bubbleTail;
 
     private boolean dragging;
     private float downRawX, downRawY;
@@ -49,24 +52,12 @@ public class DeskPetService extends Service {
     private Runnable pendingSingleTap;
 
     private static final String[] QUIET_LINES = {
-            "想操你。",
-            "欠亲。",
-            "过来。",
-            "再摸。",
-            "手别停。",
-            "想咬你。",
-            "撩我？",
-            "给我抱。"
+            "想操你。", "欠亲。", "过来。", "再摸。",
+            "手别停。", "想咬你。", "撩我？", "给我抱。"
     };
     private static final String[] WATCH_LINES = {
-            "盯着你。",
-            "想狠狠干你。",
-            "过来挨亲。",
-            "别跑。",
-            "想按住你。",
-            "又硬了。",
-            "想弄你。",
-            "靠近点。"
+            "盯着你。", "想狠狠干你。", "过来挨亲。", "别跑。",
+            "想按住你。", "又硬了。", "想弄你。", "靠近点。"
     };
 
     public static boolean isRunning() { return running; }
@@ -102,35 +93,53 @@ public class DeskPetService extends Service {
         root.setClipChildren(false);
         root.setClipToPadding(false);
 
+        GradientDrawable bubbleBg = bubbleDrawable();
         bubble = new TextView(this);
-        bubble.setTextColor(Color.WHITE);
-        bubble.setTextSize(12f);
+        bubble.setTextColor(0xFF383641);
+        bubble.setTextSize(11.5f);
+        bubble.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         bubble.setGravity(Gravity.CENTER);
-        bubble.setPadding(dp(10), dp(5), dp(10), dp(5));
+        bubble.setLetterSpacing(0.025f);
+        bubble.setPadding(dp(12), dp(6), dp(12), dp(6));
         bubble.setAlpha(0f);
+        bubble.setScaleX(.94f);
+        bubble.setScaleY(.94f);
         bubble.setVisibility(View.INVISIBLE);
         bubble.setMaxLines(1);
-        bubble.setMaxWidth(dp(126));
-        GradientDrawable bubbleBg = new GradientDrawable();
-        bubbleBg.setColor(0xD92A2C31);
-        bubbleBg.setCornerRadius(dp(12));
+        bubble.setMaxWidth(dp(118));
         bubble.setBackground(bubbleBg);
+        if (Build.VERSION.SDK_INT >= 21) bubble.setElevation(dp(5));
+
         FrameLayout.LayoutParams bubbleLp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        bubbleLp.topMargin = dp(2);
+                Gravity.TOP | Gravity.END);
+        bubbleLp.topMargin = dp(3);
+        bubbleLp.rightMargin = dp(3);
         root.addView(bubble, bubbleLp);
+
+        bubbleTail = new View(this);
+        bubbleTail.setBackground(bubbleDrawable());
+        bubbleTail.setRotation(45f);
+        bubbleTail.setAlpha(0f);
+        bubbleTail.setVisibility(View.INVISIBLE);
+        if (Build.VERSION.SDK_INT >= 21) bubbleTail.setElevation(dp(4));
+        FrameLayout.LayoutParams tailLp = new FrameLayout.LayoutParams(dp(9), dp(9),
+                Gravity.TOP | Gravity.END);
+        tailLp.topMargin = dp(31);
+        tailLp.rightMargin = dp(22);
+        root.addView(bubbleTail, tailLp);
 
         pet = new DeskPetView(this);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
-        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(154), dp(104),
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(148), dp(100),
+                Gravity.BOTTOM | Gravity.END);
+        petLp.rightMargin = 0;
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        int width = dp(154), height = dp(150);
+        int width = dp(154), height = dp(145);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
@@ -157,8 +166,17 @@ public class DeskPetService extends Service {
             root = null;
             pet = null;
             bubble = null;
+            bubbleTail = null;
             stopSelf();
         }
+    }
+
+    private GradientDrawable bubbleDrawable() {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(0xF4F7F3FB);
+        d.setStroke(dp(1), 0xFFB9AED2);
+        d.setCornerRadius(dp(15));
+        return d;
     }
 
     private boolean onTouch(View view, MotionEvent event) {
@@ -169,7 +187,9 @@ public class DeskPetService extends Service {
                 downRawY = event.getRawY();
                 downX = params.x;
                 downY = params.y;
-                pet.animate().scaleX(1.035f).scaleY(1.035f).setDuration(80).start();
+                pet.animate().cancel();
+                pet.animate().scaleX(1.045f).scaleY(.965f).translationY(dp(2))
+                        .setDuration(75).start();
                 return true;
 
             case MotionEvent.ACTION_MOVE:
@@ -181,23 +201,24 @@ public class DeskPetService extends Service {
                     int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - root.getHeight());
                     params.x = clamp(downX + Math.round(dx), 0, maxX);
                     params.y = clamp(downY + Math.round(dy), dp(24), maxY);
-                    pet.setRotation(clampFloat(dx / 18f, -5f, 5f));
+                    pet.setRotation(clampFloat(dx / 22f, -4f, 4f));
                     windowManager.updateViewLayout(root, params);
                 }
                 return true;
 
             case MotionEvent.ACTION_UP:
-                pet.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(130).start();
-                if (dragging) {
-                    savePosition();
-                } else {
-                    handleTap();
-                }
+                pet.animate().cancel();
+                pet.animate().scaleX(1f).scaleY(1f).translationY(0f).rotation(0f)
+                        .setInterpolator(new OvershootInterpolator(.9f))
+                        .setDuration(220).start();
+                if (dragging) savePosition();
+                else handleTap();
                 dragging = false;
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
-                pet.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(130).start();
+                pet.animate().scaleX(1f).scaleY(1f).translationY(0f).rotation(0f)
+                        .setDuration(130).start();
                 dragging = false;
                 return true;
 
@@ -215,7 +236,6 @@ public class DeskPetService extends Service {
             toggleWatchMode();
             return;
         }
-
         lastTapUp = now;
         pendingSingleTap = () -> {
             react();
@@ -245,20 +265,35 @@ public class DeskPetService extends Service {
     }
 
     private void showBubble(String text) {
-        if (bubble == null) return;
+        if (bubble == null || bubbleTail == null) return;
         bubble.animate().cancel();
+        bubbleTail.animate().cancel();
         bubble.setText(text.trim());
         bubble.setVisibility(View.VISIBLE);
+        bubbleTail.setVisibility(View.VISIBLE);
         bubble.setAlpha(0f);
-        bubble.animate().alpha(1f).setDuration(120).withEndAction(() ->
-                handler.postDelayed(() -> {
-                    if (bubble != null) {
-                        bubble.animate().alpha(0f).setDuration(280).withEndAction(() -> {
-                            if (bubble != null) bubble.setVisibility(View.INVISIBLE);
-                        }).start();
-                    }
-                }, 1800L)
-        ).start();
+        bubble.setScaleX(.94f);
+        bubble.setScaleY(.94f);
+        bubble.setTranslationY(dp(4));
+        bubbleTail.setAlpha(0f);
+        bubbleTail.setTranslationY(dp(4));
+
+        bubble.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
+                .setInterpolator(new OvershootInterpolator(.65f))
+                .setDuration(180).start();
+        bubbleTail.animate().alpha(1f).translationY(0f).setDuration(150).start();
+
+        handler.postDelayed(() -> {
+            if (bubble == null || bubbleTail == null) return;
+            bubble.animate().alpha(0f).translationY(-dp(3)).setDuration(220)
+                    .withEndAction(() -> {
+                        if (bubble != null) bubble.setVisibility(View.INVISIBLE);
+                    }).start();
+            bubbleTail.animate().alpha(0f).translationY(-dp(3)).setDuration(190)
+                    .withEndAction(() -> {
+                        if (bubbleTail != null) bubbleTail.setVisibility(View.INVISIBLE);
+                    }).start();
+        }, 1550L);
     }
 
     private final Runnable idleLoop = new Runnable() {
@@ -306,6 +341,7 @@ public class DeskPetService extends Service {
         root = null;
         pet = null;
         bubble = null;
+        bubbleTail = null;
         running = false;
         super.onDestroy();
     }
