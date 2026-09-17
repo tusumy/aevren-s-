@@ -4,27 +4,26 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.RectF;
 import android.os.Handler;
 import android.view.View;
 
 import java.util.Random;
 
-/** Quiet prone/loaf cat desk-pet: dark fur, green eyes and a small Y bell. */
+/** Low-pixel loaf cat: compact body, tucked paws, green eyes, tiny Y bell. */
 public class DeskPetView extends View {
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint paint = new Paint();
     private final Handler handler = new Handler();
     private final Random random = new Random();
 
     private boolean eyesOpen = true;
     private boolean looking = false;
-    private float earTwitch = 0f;
+    private boolean earUp = true;
     private float breath = 0f;
     private boolean breathUp = true;
 
     public DeskPetView(Context context) {
         super(context);
+        paint.setAntiAlias(false);
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         handler.post(blinkLoop);
         handler.post(breatheLoop);
@@ -39,12 +38,12 @@ public class DeskPetView extends View {
     }
 
     public void earTwitch() {
-        earTwitch = 1f;
+        earUp = false;
         invalidate();
         handler.postDelayed(() -> {
-            earTwitch = 0f;
+            earUp = true;
             invalidate();
-        }, 180);
+        }, 160);
     }
 
     public void setWatchMode(boolean watchMode) {
@@ -68,120 +67,105 @@ public class DeskPetView extends View {
                 handler.postDelayed(() -> {
                     eyesOpen = true;
                     invalidate();
-                }, 115);
+                }, 110);
             }
-            handler.postDelayed(this, 2600 + random.nextInt(3300));
+            handler.postDelayed(this, 2600 + random.nextInt(3200));
         }
     };
 
     private final Runnable breatheLoop = new Runnable() {
         @Override public void run() {
-            breath += breathUp ? 0.08f : -0.08f;
+            breath += breathUp ? .08f : -.08f;
             if (breath >= 1f) { breath = 1f; breathUp = false; }
             if (breath <= 0f) { breath = 0f; breathUp = true; }
             invalidate();
-            handler.postDelayed(this, 70);
+            handler.postDelayed(this, 75);
         }
     };
 
+    private void block(Canvas c, int color, float l, float t, float r, float b, float px, float py) {
+        paint.setColor(color);
+        c.drawRect(l * px, t * py, r * px, b * py, paint);
+    }
+
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        float w = getWidth();
-        float h = getHeight();
-        float cx = w * .50f;
-        float bob = -1.2f * breath;
+        // 24x16 virtual pixel grid. Intentionally blocky, like a tiny sprite.
+        float px = getWidth() / 24f;
+        float py = getHeight() / 16f;
+        float bob = breath * .18f * py;
         canvas.save();
-        canvas.translate(0f, bob);
+        canvas.translate(0, -bob);
 
-        int fur = Color.rgb(43, 45, 50);
-        int furDark = Color.rgb(34, 36, 41);
-        int line = Color.rgb(25, 27, 31);
+        int outline = Color.rgb(25, 27, 31);
+        int fur = Color.rgb(48, 51, 57);
+        int fur2 = Color.rgb(57, 60, 67);
+        int green = Color.rgb(92, 216, 134);
+        int greenDark = Color.rgb(35, 82, 53);
+        int gold = Color.rgb(202, 161, 67);
+        int goldDark = Color.rgb(92, 68, 24);
+        int nose = Color.rgb(170, 111, 122);
 
-        // Long, low body: belly is visually on the floor, not standing on four legs.
-        paint.setColor(fur);
-        canvas.drawOval(new RectF(w * .08f, h * .43f, w * .92f, h * .90f), paint);
+        // Tail behind the loaf.
+        block(canvas, outline, 18, 10, 23, 12, px, py);
+        block(canvas, fur,     18,  9, 22, 11, px, py);
+        block(canvas, fur,     20,  8, 23, 10, px, py);
 
-        // Soft haunches flattened to either side.
-        paint.setColor(Color.rgb(40, 42, 47));
-        canvas.drawOval(new RectF(w * .06f, h * .58f, w * .37f, h * .91f), paint);
-        canvas.drawOval(new RectF(w * .63f, h * .58f, w * .94f, h * .91f), paint);
+        // Flat loaf body: wide, low, no visible standing legs.
+        block(canvas, outline, 4, 7, 20, 14, px, py);
+        block(canvas, fur,     5, 7, 19, 13, px, py);
+        block(canvas, fur2,    6, 8, 18, 12, px, py);
+        block(canvas, outline, 6, 13, 18, 14, px, py);
 
-        // Head sits slightly forward and low into the body.
-        paint.setColor(furDark);
-        canvas.drawOval(new RectF(w * .27f, h * .16f, w * .73f, h * .64f), paint);
+        // Tucked paw hints only.
+        block(canvas, fur,     7, 12, 10, 13, px, py);
+        block(canvas, fur,    14, 12, 17, 13, px, py);
+        block(canvas, outline, 9, 12, 10, 13, px, py);
+        block(canvas, outline,14, 12, 15, 13, px, py);
 
-        // Ears: compact triangles, one can twitch.
-        float twitch = earTwitch * 4f;
-        Path leftEar = new Path();
-        leftEar.moveTo(w * .31f, h * .31f);
-        leftEar.lineTo(w * .35f - twitch, h * .06f);
-        leftEar.lineTo(w * .47f, h * .24f);
-        leftEar.close();
-        canvas.drawPath(leftEar, paint);
+        // Head integrated into body, smaller than the old giant circle.
+        block(canvas, outline, 7, 3, 17, 10, px, py);
+        block(canvas, fur,     8, 4, 16,  9, px, py);
+        block(canvas, fur2,    9, 4, 15,  8, px, py);
 
-        Path rightEar = new Path();
-        rightEar.moveTo(w * .69f, h * .31f);
-        rightEar.lineTo(w * .65f + twitch, h * .06f);
-        rightEar.lineTo(w * .53f, h * .24f);
-        rightEar.close();
-        canvas.drawPath(rightEar, paint);
+        // Ears, compact and asymmetrical when twitching.
+        block(canvas, outline, 7, 1, 10, 5, px, py);
+        block(canvas, fur,     8, 2, 10, 5, px, py);
+        if (earUp) {
+            block(canvas, outline,14, 1, 17, 5, px, py);
+            block(canvas, fur,   14, 2, 16, 5, px, py);
+        } else {
+            block(canvas, outline,14, 2, 17, 5, px, py);
+            block(canvas, fur,   14, 3, 16, 5, px, py);
+        }
 
-        // Tucked forepaws: only the little ends show under the chest.
-        paint.setColor(furDark);
-        canvas.drawOval(new RectF(w * .34f, h * .66f, w * .49f, h * .79f), paint);
-        canvas.drawOval(new RectF(w * .51f, h * .66f, w * .66f, h * .79f), paint);
-        paint.setColor(line);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(1.5f, w * .009f));
-        canvas.drawArc(new RectF(w * .37f, h * .70f, w * .47f, h * .77f), 15, 150, false, paint);
-        canvas.drawArc(new RectF(w * .53f, h * .70f, w * .63f, h * .77f), 15, 150, false, paint);
-        paint.setStyle(Paint.Style.FILL);
+        // Eyes: small slits at rest, brighter/wider when looking.
+        if (eyesOpen) {
+            int eyeH = looking ? 2 : 1;
+            block(canvas, green, 9, 6, 11, 6 + eyeH, px, py);
+            block(canvas, green,13, 6, 15, 6 + eyeH, px, py);
+            if (looking) {
+                block(canvas, greenDark,10, 6, 11, 8, px, py);
+                block(canvas, greenDark,13, 6, 14, 8, px, py);
+            }
+        } else {
+            block(canvas, greenDark, 9, 7, 11, 8, px, py);
+            block(canvas, greenDark,13, 7, 15, 8, px, py);
+        }
 
-        // Green eyes, slightly narrowed by default, rounder when watching A-Mao.
-        paint.setColor(Color.rgb(103, 219, 137));
-        float eyeY = h * .38f;
-        float eyeW = looking ? w * .065f : w * .055f;
-        float eyeH = eyesOpen ? (looking ? h * .045f : h * .028f) : h * .006f;
-        canvas.drawOval(new RectF(cx - w * .105f - eyeW, eyeY - eyeH, cx - w * .105f + eyeW, eyeY + eyeH), paint);
-        canvas.drawOval(new RectF(cx + w * .105f - eyeW, eyeY - eyeH, cx + w * .105f + eyeW, eyeY + eyeH), paint);
+        // Tiny nose + deadpan mouth.
+        block(canvas, nose,   11, 8, 13, 9, px, py);
+        block(canvas, outline,11, 9, 13,10, px, py);
 
-        // Small nose and unimpressed mouth.
-        paint.setColor(Color.rgb(142, 102, 109));
-        Path nose = new Path();
-        nose.moveTo(cx - w * .018f, h * .48f);
-        nose.lineTo(cx + w * .018f, h * .48f);
-        nose.lineTo(cx, h * .505f);
-        nose.close();
-        canvas.drawPath(nose, paint);
-        paint.setColor(line);
-        paint.setStrokeWidth(Math.max(1.5f, w * .009f));
-        canvas.drawLine(cx, h * .505f, cx, h * .54f, paint);
-        canvas.drawLine(cx, h * .54f, cx - w * .032f, h * .555f, paint);
-        canvas.drawLine(cx, h * .54f, cx + w * .032f, h * .555f, paint);
+        // Tiny collar/bell. It is an identifier, not a medal.
+        block(canvas, outline, 9,10,15,11, px, py);
+        block(canvas, gold,   11,10,13,12, px, py);
+        block(canvas, goldDark,12,11,13,12, px, py);
 
-        // Collar buried in the fur; bell sits right below the chin.
-        paint.setColor(Color.rgb(24, 25, 29));
-        canvas.drawRoundRect(new RectF(w * .38f, h * .58f, w * .62f, h * .615f), h * .02f, h * .02f, paint);
-        paint.setColor(Color.rgb(194, 159, 79));
-        canvas.drawCircle(cx, h * .635f, w * .035f, paint);
-        paint.setColor(Color.rgb(62, 48, 22));
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(w * .038f);
-        paint.setFakeBoldText(true);
-        canvas.drawText("Y", cx, h * .648f, paint);
-        paint.setFakeBoldText(false);
-
-        // Tail curled along the side, keeping the whole silhouette low and cat-like.
-        paint.setColor(furDark);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeWidth(w * .055f);
-        Path tail = new Path();
-        tail.moveTo(w * .78f, h * .72f);
-        tail.cubicTo(w * .93f, h * .68f, w * .93f, h * .86f, w * .82f, h * .85f);
-        canvas.drawPath(tail, paint);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setStrokeCap(Paint.Cap.BUTT);
+        // Single-pixel Y mark.
+        block(canvas, goldDark,11,10,12,11, px, py);
+        block(canvas, goldDark,12,11,13,12, px, py);
+        block(canvas, goldDark,13,10,14,11, px, py);
 
         canvas.restore();
     }
