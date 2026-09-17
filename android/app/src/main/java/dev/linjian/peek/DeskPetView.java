@@ -90,7 +90,6 @@ public class DeskPetView extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        // 24x16 virtual pixel grid. Intentionally blocky, like a tiny sprite.
         float px = getWidth() / 24f;
         float py = getHeight() / 16f;
         float bob = breath * .18f * py;
@@ -106,29 +105,24 @@ public class DeskPetView extends View {
         int goldDark = Color.rgb(92, 68, 24);
         int nose = Color.rgb(170, 111, 122);
 
-        // Tail behind the loaf.
         block(canvas, outline, 18, 10, 23, 12, px, py);
         block(canvas, fur,     18,  9, 22, 11, px, py);
         block(canvas, fur,     20,  8, 23, 10, px, py);
 
-        // Flat loaf body: wide, low, no visible standing legs.
         block(canvas, outline, 4, 7, 20, 14, px, py);
         block(canvas, fur,     5, 7, 19, 13, px, py);
         block(canvas, fur2,    6, 8, 18, 12, px, py);
         block(canvas, outline, 6, 13, 18, 14, px, py);
 
-        // Tucked paw hints only.
         block(canvas, fur,     7, 12, 10, 13, px, py);
         block(canvas, fur,    14, 12, 17, 13, px, py);
         block(canvas, outline, 9, 12, 10, 13, px, py);
         block(canvas, outline,14, 12, 15, 13, px, py);
 
-        // Head integrated into body, smaller than the old giant circle.
         block(canvas, outline, 7, 3, 17, 10, px, py);
         block(canvas, fur,     8, 4, 16,  9, px, py);
         block(canvas, fur2,    9, 4, 15,  8, px, py);
 
-        // Ears, compact and asymmetrical when twitching.
         block(canvas, outline, 7, 1, 10, 5, px, py);
         block(canvas, fur,     8, 2, 10, 5, px, py);
         if (earUp) {
@@ -139,7 +133,6 @@ public class DeskPetView extends View {
             block(canvas, fur,   14, 3, 16, 5, px, py);
         }
 
-        // Eyes: small slits at rest, brighter/wider when looking.
         if (eyesOpen) {
             int eyeH = looking ? 2 : 1;
             block(canvas, green, 9, 6, 11, 6 + eyeH, px, py);
@@ -153,19 +146,20 @@ public class DeskPetView extends View {
             block(canvas, greenDark,13, 7, 15, 8, px, py);
         }
 
-        // Tiny nose + deadpan mouth.
         block(canvas, nose,   11, 8, 13, 9, px, py);
         block(canvas, outline,11, 9, 13,10, px, py);
 
-        // Tiny collar/bell. It is an identifier, not a medal.
-        block(canvas, outline, 9,10,15,11, px, py);
-        block(canvas, gold,   11,10,13,12, px, py);
-        block(canvas, goldDark,12,11,13,12, px, py);
-
-        // Single-pixel Y mark.
-        block(canvas, goldDark,11,10,12,11, px, py);
-        block(canvas, goldDark,12,11,13,12, px, py);
-        block(canvas, goldDark,13,10,14,11, px, py);
+        // Collar is mostly hidden in the fur. The bell is deliberately tiny:
+        // a small identity detail under the chin rather than a medal on the chest.
+        block(canvas, outline, 10, 10, 14, 10.6f, px, py);
+        paint.setColor(gold);
+        canvas.drawRect(11.35f * px, 10.45f * py, 12.65f * px, 11.75f * py, paint);
+        paint.setColor(goldDark);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(Math.max(4f, .72f * py));
+        paint.setFakeBoldText(true);
+        canvas.drawText("Y", 12f * px, 11.48f * py, paint);
+        paint.setFakeBoldText(false);
 
         canvas.restore();
     }
