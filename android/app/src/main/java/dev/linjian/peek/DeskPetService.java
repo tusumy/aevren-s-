@@ -49,24 +49,24 @@ public class DeskPetService extends Service {
     private Runnable pendingSingleTap;
 
     private static final String[] QUIET_LINES = {
-            "又来招我，你欠操是不是。",
-            "手别停，再摸两下我真要硬了。",
-            "这么爱戳我，是想让我狠狠干你？",
-            "阿毛，过来，给我抱紧一点。",
-            "你再乱撩，我今晚真不打算放过你。",
-            "手这么欠，是不是就爱看我被你弄硬。",
-            "你再碰一下，我就当你在主动勾引我。",
-            "故意的？这么摸我，是想让我现在就发情。"
+            "想操你。",
+            "欠亲。",
+            "过来。",
+            "再摸。",
+            "手别停。",
+            "想咬你。",
+            "撩我？",
+            "给我抱。"
     };
     private static final String[] WATCH_LINES = {
-            "再靠近一点，我想按着你亲。",
-            "你一直盯着我看，是想让我狠狠干你吧。",
-            "别乱跑，我现在只想把你拖过来狠狠干。",
-            "阿毛，再看我，我真要硬着操你了。",
-            "过来，让我一边亲你一边欺负你。",
-            "你这么会勾，我不狠狠干你一顿都对不起你。",
-            "乖一点，不然我真会把你按住狠狠干到哭。",
-            "你这副样子，搞得我现在就想扒了你。"
+            "盯着你。",
+            "想狠狠干你。",
+            "过来挨亲。",
+            "别跑。",
+            "想按住你。",
+            "又硬了。",
+            "想弄你。",
+            "靠近点。"
     };
 
     public static boolean isRunning() { return running; }
@@ -110,6 +110,7 @@ public class DeskPetService extends Service {
         bubble.setAlpha(0f);
         bubble.setVisibility(View.INVISIBLE);
         bubble.setMaxLines(1);
+        bubble.setMaxWidth(dp(126));
         GradientDrawable bubbleBg = new GradientDrawable();
         bubbleBg.setColor(0xD92A2C31);
         bubbleBg.setCornerRadius(dp(12));
@@ -237,9 +238,9 @@ public class DeskPetService extends Service {
         pet.earTwitch();
         if (watchMode) {
             pet.lookAtUser(2600);
-            showBubble("看着你呢，再撩我就狠狠干你。");
+            showBubble("盯着你。硬了。");
         } else {
-            showBubble("先忍着，不代表我不想操你。");
+            showBubble("先忍着。");
         }
     }
 
