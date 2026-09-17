@@ -6,7 +6,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Handler;
@@ -15,7 +14,7 @@ import android.view.View;
 
 import java.util.Random;
 
-/** High-resolution Screen Feel desk pet with transparent resource frames. */
+/** High-resolution Screen Feel desk pet with transparent PNG resource frames. */
 public class DeskPetView extends View {
     private static final int FRAME_IDLE = 0;
     private static final int FRAME_BLINK = 1;
@@ -24,7 +23,6 @@ public class DeskPetView extends View {
     private static final int FRAME_HAPPY = 4;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final Paint fallbackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Handler handler = new Handler();
     private final Random random = new Random();
 
@@ -48,13 +46,24 @@ public class DeskPetView extends View {
     }
 
     private void decodeSheet() {
+        sheet = null;
         try {
             byte[] bytes = Base64.decode(DeskPetSpriteData.base64(), Base64.DEFAULT);
-            sheet = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-            if (sheet != null) sheet.setHasAlpha(true);
-        } catch (RuntimeException ignored) {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            opts.inScaled = false;
+            Bitmap decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
+            int minWidth = DeskPetSpriteData.FRAME_WIDTH * DeskPetSpriteData.FRAME_COUNT;
+            if (decoded != null && decoded.getWidth() >= minWidth && decoded.getHeight() >= DeskPetSpriteData.FRAME_HEIGHT) {
+                decoded.setHasAlpha(true);
+                sheet = decoded;
+            } else if (decoded != null) {
+                decoded.recycle();
+            }
+        } catch (Throwable ignored) {
             sheet = null;
         }
+        invalidate();
     }
 
     public void lookAtUser(long durationMs) {
@@ -172,10 +181,7 @@ public class DeskPetView extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (sheet == null || sheet.isRecycled()) {
-            drawFallbackCat(canvas);
-            return;
-        }
+        if (sheet == null || sheet.isRecycled()) return;
 
         int fw = DeskPetSpriteData.FRAME_WIDTH;
         int fh = DeskPetSpriteData.FRAME_HEIGHT;
@@ -197,36 +203,5 @@ public class DeskPetView extends View {
         paint.setShadowLayer(getHeight() * .035f, 0f, getHeight() * .018f, 0x33000000);
         canvas.drawBitmap(sheet, src, dst, paint);
         paint.clearShadowLayer();
-    }
-
-    /** Visible emergency fallback: never leave only a speech bubble on screen. */
-    private void drawFallbackCat(Canvas canvas) {
-        float w = getWidth();
-        float h = getHeight();
-        fallbackPaint.setStyle(Paint.Style.FILL);
-        fallbackPaint.setColor(0xFF292B2F);
-        fallbackPaint.setShadowLayer(h * .04f, 0f, h * .02f, 0x3D000000);
-
-        RectF body = new RectF(w * .16f, h * .38f, w * .90f, h * .88f);
-        canvas.drawOval(body, fallbackPaint);
-
-        Path head = new Path();
-        head.moveTo(w * .24f, h * .60f);
-        head.lineTo(w * .28f, h * .18f);
-        head.lineTo(w * .42f, h * .37f);
-        head.lineTo(w * .58f, h * .37f);
-        head.lineTo(w * .70f, h * .18f);
-        head.lineTo(w * .76f, h * .60f);
-        head.close();
-        canvas.drawPath(head, fallbackPaint);
-        canvas.drawOval(new RectF(w * .24f, h * .34f, w * .76f, h * .82f), fallbackPaint);
-        fallbackPaint.clearShadowLayer();
-
-        fallbackPaint.setColor(0xFFB7E8C1);
-        canvas.drawOval(new RectF(w * .35f, h * .50f, w * .44f, h * .60f), fallbackPaint);
-        canvas.drawOval(new RectF(w * .56f, h * .50f, w * .65f, h * .60f), fallbackPaint);
-
-        fallbackPaint.setColor(0xFFD7B15A);
-        canvas.drawCircle(w * .50f, h * .75f, h * .052f, fallbackPaint);
     }
 }
