@@ -1,166 +1,193 @@
 package dev.linjian.peek;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.os.Handler;
+import android.util.Base64;
 import android.view.View;
 
 import java.util.Random;
 
-/** Low-pixel loaf cat: compact body, tucked paws, green eyes, tiny Y bell. */
+/**
+ * Resource-frame desk pet.
+ * The cat artwork is embedded as a small transparent sprite sheet so the pet can
+ * blink/react without rebuilding its appearance from geometric Canvas shapes.
+ */
 public class DeskPetView extends View {
-    private final Paint paint = new Paint();
+    private static final int FRAME_IDLE = 0;
+    private static final int FRAME_BLINK = 1;
+    private static final int FRAME_WAKE = 2;
+    private static final int FRAME_WATCH = 3;
+    private static final int FRAME_HAPPY = 4;
+
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Handler handler = new Handler();
     private final Random random = new Random();
 
-    private boolean eyesOpen = true;
-    private boolean looking = false;
-    private boolean earUp = true;
-    private float breath = 0f;
+    private Bitmap sheet;
+    private int frame = FRAME_IDLE;
+    private boolean looking;
+    private boolean released;
+    private boolean peeking;
+    private float breath;
     private boolean breathUp = true;
 
     public DeskPetView(Context context) {
         super(context);
-        paint.setAntiAlias(false);
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        decodeSheet();
         handler.post(blinkLoop);
         handler.post(breatheLoop);
+        handler.post(ambientLoop);
+    }
+
+    private void decodeSheet() {
+        try {
+            byte[] bytes = Base64.decode(DeskPetSpriteData.base64(), Base64.DEFAULT);
+            sheet = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        } catch (RuntimeException ignored) {
+            sheet = null;
+        }
     }
 
     public void lookAtUser(long durationMs) {
         looking = true;
-        eyesOpen = true;
+        peeking = false;
+        frame = FRAME_WATCH;
         invalidate();
         handler.removeCallbacks(stopLooking);
         handler.postDelayed(stopLooking, durationMs);
     }
 
     public void earTwitch() {
-        earUp = false;
+        if (looking) return;
+        frame = FRAME_HAPPY;
         invalidate();
         handler.postDelayed(() -> {
-            earUp = true;
-            invalidate();
-        }, 160);
+            if (!released && !looking) {
+                frame = FRAME_IDLE;
+                invalidate();
+            }
+        }, 420L);
     }
 
     public void setWatchMode(boolean watchMode) {
-        if (watchMode) lookAtUser(2200);
+        if (watchMode) lookAtUser(2200L);
+    }
+
+    /** Small screen-edge style reaction: dip lower so it feels like the cat peeks out. */
+    public void peek(long durationMs) {
+        if (looking) return;
+        peeking = true;
+        frame = FRAME_WATCH;
+        invalidate();
+        handler.postDelayed(() -> {
+            if (!released) {
+                peeking = false;
+                if (!looking) frame = FRAME_IDLE;
+                invalidate();
+            }
+        }, durationMs);
     }
 
     public void release() {
+        released = true;
         handler.removeCallbacksAndMessages(null);
+        if (sheet != null) {
+            sheet.recycle();
+            sheet = null;
+        }
     }
 
     private final Runnable stopLooking = () -> {
         looking = false;
+        frame = FRAME_IDLE;
         invalidate();
     };
 
     private final Runnable blinkLoop = new Runnable() {
         @Override public void run() {
-            if (!looking) {
-                eyesOpen = false;
+            if (released) return;
+            if (!looking && !peeking) {
+                frame = FRAME_BLINK;
                 invalidate();
                 handler.postDelayed(() -> {
-                    eyesOpen = true;
-                    invalidate();
-                }, 110);
+                    if (!released && !looking && !peeking) {
+                        frame = FRAME_IDLE;
+                        invalidate();
+                    }
+                }, 125L);
             }
-            handler.postDelayed(this, 2600 + random.nextInt(3200));
+            handler.postDelayed(this, 2600L + random.nextInt(3300));
+        }
+    };
+
+    private final Runnable ambientLoop = new Runnable() {
+        @Override public void run() {
+            if (released) return;
+            if (!looking && !peeking) {
+                int roll = random.nextInt(7);
+                if (roll == 0) {
+                    frame = FRAME_WAKE;
+                    invalidate();
+                    handler.postDelayed(() -> {
+                        if (!released && !looking && !peeking) {
+                            frame = FRAME_IDLE;
+                            invalidate();
+                        }
+                    }, 850L);
+                } else if (roll == 1) {
+                    frame = FRAME_HAPPY;
+                    invalidate();
+                    handler.postDelayed(() -> {
+                        if (!released && !looking && !peeking) {
+                            frame = FRAME_IDLE;
+                            invalidate();
+                        }
+                    }, 720L);
+                } else if (roll == 2) {
+                    peek(1100L);
+                }
+            }
+            handler.postDelayed(this, 5200L + random.nextInt(5200));
         }
     };
 
     private final Runnable breatheLoop = new Runnable() {
         @Override public void run() {
-            breath += breathUp ? .08f : -.08f;
+            if (released) return;
+            breath += breathUp ? .06f : -.06f;
             if (breath >= 1f) { breath = 1f; breathUp = false; }
             if (breath <= 0f) { breath = 0f; breathUp = true; }
             invalidate();
-            handler.postDelayed(this, 75);
+            handler.postDelayed(this, 85L);
         }
     };
 
-    private void block(Canvas c, int color, float l, float t, float r, float b, float px, float py) {
-        paint.setColor(color);
-        c.drawRect(l * px, t * py, r * px, b * py, paint);
-    }
-
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        float px = getWidth() / 24f;
-        float py = getHeight() / 16f;
-        float bob = breath * .18f * py;
-        canvas.save();
-        canvas.translate(0, -bob);
+        if (sheet == null || sheet.isRecycled()) return;
 
-        int outline = Color.rgb(25, 27, 31);
-        int fur = Color.rgb(48, 51, 57);
-        int fur2 = Color.rgb(57, 60, 67);
-        int green = Color.rgb(92, 216, 134);
-        int greenDark = Color.rgb(35, 82, 53);
-        int gold = Color.rgb(202, 161, 67);
-        int goldDark = Color.rgb(92, 68, 24);
-        int nose = Color.rgb(170, 111, 122);
+        int fw = DeskPetSpriteData.FRAME_WIDTH;
+        int fh = DeskPetSpriteData.FRAME_HEIGHT;
+        int safeFrame = Math.max(0, Math.min(frame, DeskPetSpriteData.FRAME_COUNT - 1));
+        Rect src = new Rect(safeFrame * fw, 0, (safeFrame + 1) * fw, fh);
 
-        block(canvas, outline, 18, 10, 23, 12, px, py);
-        block(canvas, fur,     18,  9, 22, 11, px, py);
-        block(canvas, fur,     20,  8, 23, 10, px, py);
+        float bob = breath * getHeight() * .008f;
+        float peekShift = peeking ? getHeight() * .16f : 0f;
+        float insetX = getWidth() * .015f;
+        float insetY = getHeight() * .02f;
+        RectF dst = new RectF(
+                insetX,
+                insetY + bob + peekShift,
+                getWidth() - insetX,
+                getHeight() - insetY + bob + peekShift);
 
-        block(canvas, outline, 4, 7, 20, 14, px, py);
-        block(canvas, fur,     5, 7, 19, 13, px, py);
-        block(canvas, fur2,    6, 8, 18, 12, px, py);
-        block(canvas, outline, 6, 13, 18, 14, px, py);
-
-        block(canvas, fur,     7, 12, 10, 13, px, py);
-        block(canvas, fur,    14, 12, 17, 13, px, py);
-        block(canvas, outline, 9, 12, 10, 13, px, py);
-        block(canvas, outline,14, 12, 15, 13, px, py);
-
-        block(canvas, outline, 7, 3, 17, 10, px, py);
-        block(canvas, fur,     8, 4, 16,  9, px, py);
-        block(canvas, fur2,    9, 4, 15,  8, px, py);
-
-        block(canvas, outline, 7, 1, 10, 5, px, py);
-        block(canvas, fur,     8, 2, 10, 5, px, py);
-        if (earUp) {
-            block(canvas, outline,14, 1, 17, 5, px, py);
-            block(canvas, fur,   14, 2, 16, 5, px, py);
-        } else {
-            block(canvas, outline,14, 2, 17, 5, px, py);
-            block(canvas, fur,   14, 3, 16, 5, px, py);
-        }
-
-        if (eyesOpen) {
-            int eyeH = looking ? 2 : 1;
-            block(canvas, green, 9, 6, 11, 6 + eyeH, px, py);
-            block(canvas, green,13, 6, 15, 6 + eyeH, px, py);
-            if (looking) {
-                block(canvas, greenDark,10, 6, 11, 8, px, py);
-                block(canvas, greenDark,13, 6, 14, 8, px, py);
-            }
-        } else {
-            block(canvas, greenDark, 9, 7, 11, 8, px, py);
-            block(canvas, greenDark,13, 7, 15, 8, px, py);
-        }
-
-        block(canvas, nose,   11, 8, 13, 9, px, py);
-        block(canvas, outline,11, 9, 13,10, px, py);
-
-        // Collar is mostly hidden in the fur. The bell is deliberately tiny:
-        // a small identity detail under the chin rather than a medal on the chest.
-        block(canvas, outline, 10, 10, 14, 10.6f, px, py);
-        paint.setColor(gold);
-        canvas.drawRect(11.35f * px, 10.45f * py, 12.65f * px, 11.75f * py, paint);
-        paint.setColor(goldDark);
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(Math.max(4f, .72f * py));
-        paint.setFakeBoldText(true);
-        canvas.drawText("Y", 12f * px, 11.48f * py, paint);
-        paint.setFakeBoldText(false);
-
-        canvas.restore();
+        canvas.drawBitmap(sheet, src, dst, paint);
     }
 }
