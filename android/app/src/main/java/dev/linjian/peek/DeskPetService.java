@@ -5,14 +5,13 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.AnimationDrawable;
-import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -21,8 +20,8 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.widget.ImageView;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.Random;
@@ -31,31 +30,30 @@ public class DeskPetService extends Service {
     public static final String ACTION_STOP = "dev.linjian.peek.STOP_DESK_PET";
     private static final String CHANNEL_ID = "zhangxinchuang_desk_pet";
     private static final int NOTIFICATION_ID = 20260830;
+    private static final String KEY_WATCH_MODE = "desk_pet_watch_mode";
     private static volatile boolean running;
 
     private final Handler handler = new Handler();
+    private final Random random = new Random();
     private WindowManager windowManager;
     private WindowManager.LayoutParams params;
-    private ImageView pet;
-    private Bitmap spriteAtlas;
-    private AnimationDrawable idleAnimation;
-    private AnimationDrawable runRightAnimation;
-    private AnimationDrawable runLeftAnimation;
-    private AnimationDrawable waveAnimation;
-    private int animationRow = -1;
-    private final Random random = new Random();
-    private boolean walking;
-    private int behaviorTicks = 80;
-    private static final int EDGE_BOTTOM = 0;
-    private static final int EDGE_RIGHT = 1;
-    private static final int EDGE_TOP = 2;
-    private static final int EDGE_LEFT = 3;
+    private FrameLayout root;
+    private DeskPetView pet;
+    private TextView bubble;
 
-    private int edge = EDGE_BOTTOM;
-    private int tick;
     private boolean dragging;
     private float downRawX, downRawY;
     private int downX, downY;
+    private long lastTapUp;
+    private boolean watchMode;
+    private Runnable pendingSingleTap;
+
+    private static final String[] QUIET_LINES = {
+            "又戳我。", "没跑。", "……干嘛。", "阿毛。", "在。"
+    };
+    private static final String[] WATCH_LINES = {
+            "在看你。", "过来一点。", "想抱你。", "阿毛。", "还在这。"
+    };
 
     public static boolean isRunning() { return running; }
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -64,10 +62,14 @@ public class DeskPetService extends Service {
         super.onCreate();
         createChannel();
         startForeground(NOTIFICATION_ID, notification());
-        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) { stopSelf(); return; }
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+            stopSelf();
+            return;
+        }
+        watchMode = AppPrefs.get(this).getBoolean(KEY_WATCH_MODE, false);
         showPet();
         running = true;
-        handler.post(walkLoop);
+        handler.post(idleLoop);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -80,276 +82,261 @@ public class DeskPetService extends Service {
     }
 
     private void showPet() {
-        windowManager = (WindowManager)getSystemService(WINDOW_SERVICE);
-        pet = new ImageView(this);
-        spriteAtlas = BitmapFactory.decodeResource(getResources(), R.drawable.yanya_android_atlas);
-        idleAnimation = createAnimation(0, 6, 180, true);
-        runRightAnimation = createAnimation(1, new int[]{1, 3, 4, 5, 7}, 180, true);
-        runLeftAnimation = createAnimation(2, new int[]{1, 3, 4, 5, 7}, 180, true);
-        waveAnimation = createAnimation(3, 4, 140, false);
-        playAnimation(idleAnimation, 0);
-        pet.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        pet.setContentDescription("Yanya 桌宠");
-        int width = dp(112), height = dp(166);
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+
+        root = new FrameLayout(this);
+        root.setClipChildren(false);
+        root.setClipToPadding(false);
+
+        bubble = new TextView(this);
+        bubble.setTextColor(Color.WHITE);
+        bubble.setTextSize(12f);
+        bubble.setGravity(Gravity.CENTER);
+        bubble.setPadding(dp(10), dp(5), dp(10), dp(5));
+        bubble.setAlpha(0f);
+        bubble.setVisibility(View.INVISIBLE);
+        bubble.setMaxLines(1);
+        GradientDrawable bubbleBg = new GradientDrawable();
+        bubbleBg.setColor(0xD92A2C31);
+        bubbleBg.setCornerRadius(dp(12));
+        bubble.setBackground(bubbleBg);
+        FrameLayout.LayoutParams bubbleLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        bubbleLp.topMargin = dp(4);
+        root.addView(bubble, bubbleLp);
+
+        pet = new DeskPetView(this);
+        pet.setContentDescription("玄砚桌宠");
+        pet.setWatchMode(watchMode);
+        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(112), dp(166),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        root.addView(pet, petLp);
+        pet.setOnTouchListener(this::onTouch);
+
+        int width = dp(184), height = dp(220);
         params = new WindowManager.LayoutParams(
                 width, height,
-                Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                Build.VERSION.SDK_INT >= 26
+                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.START | Gravity.TOP;
+
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int screenH = getResources().getDisplayMetrics().heightPixels;
-        params.x = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, screenW - width), 0, Math.max(0, screenW - width));
-        params.y = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_Y, screenH - height - dp(80)), dp(24), Math.max(dp(24), screenH - height));
-        edge = nearestEdge(params.x, params.y, screenW - width, screenH - height);
-        applyEdgePose();
-        pet.setOnTouchListener(this::onTouch);
+        params.x = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, screenW - width),
+                0, Math.max(0, screenW - width));
+        params.y = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_Y, screenH - height - dp(80)),
+                dp(24), Math.max(dp(24), screenH - height));
+
         try {
-            windowManager.addView(pet, params);
+            windowManager.addView(root, params);
         } catch (RuntimeException error) {
             AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false).apply();
-            Toast.makeText(this, "Yanya 没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "玄砚没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
+            root = null;
             pet = null;
+            bubble = null;
             stopSelf();
-            return;
         }
-        breathe();
     }
 
     private boolean onTouch(View view, MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 dragging = false;
-                downRawX = event.getRawX(); downRawY = event.getRawY();
-                downX = params.x; downY = params.y;
-                pet.animate().scaleX(1.06f).scaleY(1.06f).setDuration(90).start();
+                downRawX = event.getRawX();
+                downRawY = event.getRawY();
+                downX = params.x;
+                downY = params.y;
+                pet.animate().scaleX(1.035f).scaleY(1.035f).setDuration(80).start();
                 return true;
+
             case MotionEvent.ACTION_MOVE:
-                float dx = event.getRawX() - downRawX, dy = event.getRawY() - downRawY;
-                if (Math.abs(dx) + Math.abs(dy) > dp(8)) dragging = true;
+                float dx = event.getRawX() - downRawX;
+                float dy = event.getRawY() - downRawY;
+                if (Math.abs(dx) + Math.abs(dy) > dp(7)) dragging = true;
                 if (dragging) {
-                    int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
-                    int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
+                    int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - root.getWidth());
+                    int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - root.getHeight());
                     params.x = clamp(downX + Math.round(dx), 0, maxX);
                     params.y = clamp(downY + Math.round(dy), dp(24), maxY);
-                    windowManager.updateViewLayout(pet, params);
+                    pet.setRotation(clampFloat(dx / 18f, -5f, 5f));
+                    windowManager.updateViewLayout(root, params);
                 }
                 return true;
+
             case MotionEvent.ACTION_UP:
-                pet.animate().scaleX(1f).scaleY(1f).setDuration(120).start();
-                if (dragging) { snapToNearestEdge(); savePosition(); } else react();
+                pet.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(130).start();
+                if (dragging) {
+                    // v2: stop exactly where the user releases it. No edge snapping.
+                    savePosition();
+                } else {
+                    handleTap();
+                }
                 dragging = false;
                 return true;
+
             case MotionEvent.ACTION_CANCEL:
-                pet.animate().scaleX(1f).scaleY(1f).setDuration(120).start();
+                pet.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(130).start();
                 dragging = false;
                 return true;
-            default: return false;
-        }
-    }
 
-    private final Runnable walkLoop = new Runnable() {
-        @Override public void run() {
-            if (pet == null) return;
-            if (!dragging) {
-                tick++;
-                behaviorTicks--;
-                if (behaviorTicks <= 0) {
-                    walking = !walking;
-                    if (walking) {
-                        behaviorTicks = 50 + random.nextInt(61);
-                        animationRow = -1;
-                    } else {
-                        behaviorTicks = 125 + random.nextInt(206);
-                        playAnimation(idleAnimation, 0);
-                        breathe();
-                    }
-                }
-
-                if (walking) {
-                    if (tick % 2 == 0) walkOneStep();
-                } else if (tick % 100 == 0) {
-                    breathe();
-                }
-            }
-            handler.postDelayed(this, 55);
-        }
-    };
-
-    private void walkOneStep() {
-        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
-        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
-        int step = dp(1);
-
-        switch (edge) {
-            case EDGE_BOTTOM:
-                params.x += step;
-                if (params.x >= maxX) { params.x = maxX; edge = EDGE_RIGHT; }
-                break;
-            case EDGE_RIGHT:
-                params.y -= step;
-                if (params.y <= dp(24)) { params.y = dp(24); edge = EDGE_TOP; }
-                break;
-            case EDGE_TOP:
-                params.x -= step;
-                if (params.x <= 0) { params.x = 0; edge = EDGE_LEFT; }
-                break;
             default:
-                params.y += step;
-                if (params.y >= maxY) { params.y = maxY; edge = EDGE_BOTTOM; }
-                break;
+                return false;
+        }
+    }
+
+    private void handleTap() {
+        long now = System.currentTimeMillis();
+        if (now - lastTapUp <= 320L) {
+            if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
+            pendingSingleTap = null;
+            lastTapUp = 0L;
+            toggleWatchMode();
+            return;
         }
 
-        applyEdgePose();
-        playAnimation((edge == EDGE_BOTTOM || edge == EDGE_RIGHT) ? runRightAnimation : runLeftAnimation,
-                (edge == EDGE_BOTTOM || edge == EDGE_RIGHT) ? 1 : 2);
-        pet.setTranslationY(0);
-        windowManager.updateViewLayout(pet, params);
-    }
-
-    private void applyEdgePose() {
-        if (pet == null) return;
-        pet.setRotation(0f);
-        pet.setScaleX(1f);
-    }
-
-    private AnimationDrawable createAnimation(int row, int frameCount, int durationMs, boolean loop) {
-        AnimationDrawable animation = new AnimationDrawable();
-        animation.setOneShot(!loop);
-        int frameWidth = spriteAtlas.getWidth() / 8;
-        int frameHeight = spriteAtlas.getHeight() / 4;
-        for (int column = 0; column < frameCount; column++) {
-            Bitmap frame = Bitmap.createBitmap(spriteAtlas, column * frameWidth, row * frameHeight, frameWidth, frameHeight);
-            animation.addFrame(new BitmapDrawable(getResources(), frame), durationMs);
-        }
-        return animation;
-    }
-
-    private AnimationDrawable createAnimation(int row, int[] columns, int durationMs, boolean loop) {
-        AnimationDrawable animation = new AnimationDrawable();
-        animation.setOneShot(!loop);
-        int frameWidth = spriteAtlas.getWidth() / 8;
-        int frameHeight = spriteAtlas.getHeight() / 4;
-        for (int column : columns) {
-            Bitmap frame = Bitmap.createBitmap(spriteAtlas, column * frameWidth, row * frameHeight, frameWidth, frameHeight);
-            animation.addFrame(new BitmapDrawable(getResources(), frame), durationMs);
-        }
-        return animation;
-    }
-
-    private void playAnimation(AnimationDrawable animation, int row) {
-        if (pet == null || animation == null || animationRow == row) return;
-        if (pet.getDrawable() instanceof AnimationDrawable) {
-            ((AnimationDrawable) pet.getDrawable()).stop();
-        }
-        animationRow = row;
-        pet.setImageDrawable(animation);
-        animation.start();
-    }
-
-    private void breathe() {
-        if (pet == null) return;
-        pet.animate().translationY(-dp(3)).scaleY(1.015f).setDuration(700)
-                .setInterpolator(new AccelerateDecelerateInterpolator())
-                .withEndAction(() -> { if (pet != null && !dragging) pet.animate().translationY(0).scaleY(1f).setDuration(700).start(); })
-                .start();
+        lastTapUp = now;
+        pendingSingleTap = () -> {
+            react();
+            pendingSingleTap = null;
+        };
+        handler.postDelayed(pendingSingleTap, 260L);
     }
 
     private void react() {
-        walking = false;
-        behaviorTicks = 125 + random.nextInt(206);
-        animationRow = -1;
-        playAnimation(waveAnimation, 3);
-        pet.animate().translationY(-dp(13)).setDuration(150)
-                .withEndAction(() -> pet.animate().translationY(0).setDuration(240).start()).start();
-        handler.postDelayed(() -> {
-            animationRow = -1;
-            playAnimation(idleAnimation, 0);
-        }, 700);
-        Toast.makeText(this, "Yanya 被你戳醒了。", Toast.LENGTH_SHORT).show();
+        if (pet == null) return;
+        pet.lookAtUser(watchMode ? 2200 : 1350);
+        pet.earTwitch();
+        showBubble(randomLine(watchMode ? WATCH_LINES : QUIET_LINES));
     }
 
-    private void sleep() {
-        if (pet == null || dragging) return;
-        playAnimation(idleAnimation, 0);
-        pet.animate().translationY(dp(10)).scaleY(.88f).alpha(.86f).setDuration(650).start();
-    }
-
-    private void wakeUp() {
-        if (pet == null || dragging) return;
-        playAnimation(idleAnimation, 0);
-        pet.animate().rotation(0f).translationY(0).scaleY(1f).alpha(1f).setDuration(350).start();
-    }
-
-    private void snapToNearestEdge() {
-        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
-        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
-        edge = nearestEdge(params.x, params.y, maxX, maxY);
-        switch (edge) {
-            case EDGE_RIGHT: params.x = maxX; break;
-            case EDGE_TOP: params.y = dp(24); break;
-            case EDGE_LEFT: params.x = 0; break;
-            default: params.y = maxY; break;
+    private void toggleWatchMode() {
+        watchMode = !watchMode;
+        AppPrefs.get(this).edit().putBoolean(KEY_WATCH_MODE, watchMode).apply();
+        pet.setWatchMode(watchMode);
+        pet.earTwitch();
+        if (watchMode) {
+            pet.lookAtUser(2600);
+            showBubble("看着阿毛。 ");
+        } else {
+            showBubble("安静待机。 ");
         }
-        applyEdgePose();
-        windowManager.updateViewLayout(pet, params);
     }
 
-    private int nearestEdge(int x, int y, int maxX, int maxY) {
-        int bottom = Math.abs(maxY - y);
-        int right = Math.abs(maxX - x);
-        int top = Math.abs(y - dp(24));
-        int left = Math.abs(x);
-        int nearest = Math.min(Math.min(bottom, right), Math.min(top, left));
-        if (nearest == right) return EDGE_RIGHT;
-        if (nearest == top) return EDGE_TOP;
-        if (nearest == left) return EDGE_LEFT;
-        return EDGE_BOTTOM;
+    private void showBubble(String text) {
+        if (bubble == null) return;
+        bubble.animate().cancel();
+        bubble.setText(text.trim());
+        bubble.setVisibility(View.VISIBLE);
+        bubble.setAlpha(0f);
+        bubble.animate().alpha(1f).setDuration(120).withEndAction(() ->
+                handler.postDelayed(() -> {
+                    if (bubble != null) {
+                        bubble.animate().alpha(0f).setDuration(280).withEndAction(() -> {
+                            if (bubble != null) bubble.setVisibility(View.INVISIBLE);
+                        }).start();
+                    }
+                }, 1800L)
+        ).start();
+    }
+
+    private final Runnable idleLoop = new Runnable() {
+        @Override public void run() {
+            if (pet == null) return;
+            if (!dragging) {
+                // Keep idle life subtle: occasional ear twitch only.
+                if (random.nextInt(7) == 0) pet.earTwitch();
+
+                // Watch mode may occasionally look at the user and surface one very short thought.
+                if (watchMode && random.nextInt(9) == 0) {
+                    pet.lookAtUser(1800);
+                    if (random.nextBoolean()) showBubble(randomLine(WATCH_LINES));
+                }
+            }
+            handler.postDelayed(this, 3200L + random.nextInt(2600));
+        }
+    };
+
+    private String randomLine(String[] lines) {
+        return lines[random.nextInt(lines.length)];
     }
 
     private void savePosition() {
-        AppPrefs.get(this).edit().putInt(AppPrefs.KEY_DESK_PET_X, params.x).putInt(AppPrefs.KEY_DESK_PET_Y, params.y).apply();
-    }
-
-    @Override public void onDestroy() {
-        handler.removeCallbacksAndMessages(null);
-        if (windowManager != null && pet != null) { try { windowManager.removeView(pet); } catch (Exception ignored) { } }
-        pet = null;
-        if (spriteAtlas != null) { spriteAtlas.recycle(); spriteAtlas = null; }
-        running = false;
-        super.onDestroy();
+        AppPrefs.get(this).edit()
+                .putInt(AppPrefs.KEY_DESK_PET_X, params.x)
+                .putInt(AppPrefs.KEY_DESK_PET_Y, params.y)
+                .apply();
     }
 
     @Override public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        if (pet == null || params == null || windowManager == null) return;
-        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - pet.getWidth());
-        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - pet.getHeight());
+        if (root == null || params == null || windowManager == null) return;
+        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - root.getWidth());
+        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - root.getHeight());
         params.x = clamp(params.x, 0, maxX);
         params.y = clamp(params.y, dp(24), maxY);
-        snapToNearestEdge();
+        windowManager.updateViewLayout(root, params);
         savePosition();
+    }
+
+    @Override public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        if (pet != null) pet.release();
+        if (windowManager != null && root != null) {
+            try { windowManager.removeView(root); } catch (Exception ignored) { }
+        }
+        root = null;
+        pet = null;
+        bubble = null;
+        running = false;
+        super.onDestroy();
     }
 
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "掌心窗桌宠", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("让 Yanya 留在手机桌面");
-        ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID, "掌心窗桌宠", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("让玄砚安静留在手机桌面");
+        ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(channel);
     }
 
     private Notification notification() {
         Intent open = new Intent(this, MainActivity.class);
-        PendingIntent openPi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent openPi = PendingIntent.getActivity(
+                this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Intent stop = new Intent(this, DeskPetService.class).setAction(ACTION_STOP);
-        PendingIntent stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        PendingIntent stopPi = PendingIntent.getService(
+                this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
         Bitmap largeIcon = BitmapFactory.decodeResource(getResources(), R.drawable.ic_launcher_art);
-        return b.setSmallIcon(R.drawable.ic_heart_wave).setLargeIcon(largeIcon).setContentTitle("Yanya 在桌面陪你")
-                .setContentText("点开掌心窗调整；拖动 Yanya 可以换位置")
-                .setContentIntent(openPi).addAction(0, "收回", stopPi).setOngoing(true).build();
+        return b.setSmallIcon(R.drawable.ic_heart_wave)
+                .setLargeIcon(largeIcon)
+                .setContentTitle("玄砚在桌面陪你")
+                .setContentText("拖到哪就待在哪；单击看你，双击切换状态")
+                .setContentIntent(openPi)
+                .addAction(0, "收回", stopPi)
+                .setOngoing(true)
+                .build();
     }
 
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static float clampFloat(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
 }
