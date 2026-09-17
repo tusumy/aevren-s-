@@ -13,11 +13,7 @@ import android.view.View;
 
 import java.util.Random;
 
-/**
- * Resource-frame desk pet.
- * The cat artwork is embedded as a small transparent sprite sheet so the pet can
- * blink/react without rebuilding its appearance from geometric Canvas shapes.
- */
+/** Resource-frame desk pet with soft on-screen polish. */
 public class DeskPetView extends View {
     private static final int FRAME_IDLE = 0;
     private static final int FRAME_BLINK = 1;
@@ -80,7 +76,6 @@ public class DeskPetView extends View {
         if (watchMode) lookAtUser(2200L);
     }
 
-    /** Small screen-edge style reaction: dip lower so it feels like the cat peeks out. */
     public void peek(long durationMs) {
         if (looking) return;
         peeking = true;
@@ -161,11 +156,11 @@ public class DeskPetView extends View {
     private final Runnable breatheLoop = new Runnable() {
         @Override public void run() {
             if (released) return;
-            breath += breathUp ? .06f : -.06f;
+            breath += breathUp ? .055f : -.055f;
             if (breath >= 1f) { breath = 1f; breathUp = false; }
             if (breath <= 0f) { breath = 0f; breathUp = true; }
             invalidate();
-            handler.postDelayed(this, 85L);
+            handler.postDelayed(this, 90L);
         }
     };
 
@@ -178,16 +173,19 @@ public class DeskPetView extends View {
         int safeFrame = Math.max(0, Math.min(frame, DeskPetSpriteData.FRAME_COUNT - 1));
         Rect src = new Rect(safeFrame * fw, 0, (safeFrame + 1) * fw, fh);
 
-        float bob = breath * getHeight() * .008f;
+        float bob = breath * getHeight() * .0065f;
         float peekShift = peeking ? getHeight() * .16f : 0f;
-        float insetX = getWidth() * .015f;
-        float insetY = getHeight() * .02f;
+        float insetX = getWidth() * .025f;
+        float insetY = getHeight() * .025f;
         RectF dst = new RectF(
                 insetX,
                 insetY + bob + peekShift,
                 getWidth() - insetX,
                 getHeight() - insetY + bob + peekShift);
 
+        paint.setAlpha(255);
+        paint.setShadowLayer(getHeight() * .045f, 0f, getHeight() * .022f, 0x42000000);
         canvas.drawBitmap(sheet, src, dst, paint);
+        paint.clearShadowLayer();
     }
 }
