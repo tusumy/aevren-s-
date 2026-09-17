@@ -160,7 +160,7 @@ public class DeskPetView extends View {
         drawAccent(canvas, w, h);
         drawHead(canvas, w, h);
         drawFace(canvas, w, h);
-        drawCollar(canvas, w, h);
+        drawYMark(canvas, w, h);
         canvas.restore();
     }
 
@@ -279,26 +279,21 @@ public class DeskPetView extends View {
         c.drawCircle(cx - rx * .28f, cy - ry * .30f, Math.min(rx, ry) * .16f, p);
     }
 
-    private void drawCollar(Canvas c, float w, float h) {
+    private void drawYMark(Canvas c, float w, float h) {
         float cx = w * .50f;
-        float y = h * .825f;
-        stroke.setStrokeWidth(h * .009f);
-        stroke.setColor(0xFFCACFD5);
-        c.drawLine(cx - w * .035f, y - h * .010f, cx - w * .012f, y + h * .002f, stroke);
-        c.drawLine(cx + w * .035f, y - h * .010f, cx + w * .012f, y + h * .002f, stroke);
+        float topY = h * .806f;
+        float splitY = h * .830f;
+        float bottomY = h * .868f;
 
-        RectF tag = new RectF(cx - h * .021f, y, cx + h * .021f, y + h * .047f);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFE6E9ED);
-        c.drawRoundRect(tag, h * .008f, h * .008f, p);
-        stroke.setStrokeWidth(h * .004f);
-        stroke.setColor(0xFF9AA3AA);
-        c.drawRoundRect(tag, h * .008f, h * .008f, stroke);
-        p.setColor(0xFF506E5D);
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(h * .034f);
-        p.setFakeBoldText(true);
-        c.drawText("Y", cx, y + h * .035f, p);
-        p.setFakeBoldText(false);
+        stroke.setStrokeWidth(h * .009f);
+        stroke.setColor(0xFFD9DEE1);
+        c.drawLine(cx - w * .032f, topY, cx, splitY, stroke);
+        c.drawLine(cx + w * .032f, topY, cx, splitY, stroke);
+        c.drawLine(cx, splitY, cx, bottomY, stroke);
+
+        stroke.setStrokeWidth(h * .0035f);
+        stroke.setColor(0xFF79C18E);
+        c.drawLine(cx - w * .014f, splitY + h * .012f, cx, splitY + h * .026f, stroke);
+        c.drawLine(cx + w * .014f, splitY + h * .012f, cx, splitY + h * .026f, stroke);
     }
 }
