@@ -115,7 +115,10 @@ public class DeskPetService extends Service {
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        int width = dp(184), height = dp(150);
+        // Keep the overlay exactly as wide as the pet. The old 184dp container
+        // left ~15dp transparent padding on both sides, so the cat never visually
+        // reached the screen edge even when the window itself did.
+        int width = dp(154), height = dp(150);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
