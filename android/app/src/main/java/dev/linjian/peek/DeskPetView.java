@@ -15,12 +15,12 @@ import android.view.View;
 
 import java.util.Random;
 
-/** Resource-frame desk pet with soft on-screen polish. */
+/** High-resolution Screen Feel desk pet with transparent resource frames. */
 public class DeskPetView extends View {
     private static final int FRAME_IDLE = 0;
     private static final int FRAME_BLINK = 1;
-    private static final int FRAME_WAKE = 2;
-    private static final int FRAME_WATCH = 3;
+    private static final int FRAME_SLEEP = 2;
+    private static final int FRAME_PEEK = 3;
     private static final int FRAME_HAPPY = 4;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -50,57 +50,17 @@ public class DeskPetView extends View {
     private void decodeSheet() {
         try {
             byte[] bytes = Base64.decode(DeskPetSpriteData.base64(), Base64.DEFAULT);
-            Bitmap decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-            sheet = decoded == null ? null : normalizeAlpha(decoded);
-            if (decoded != null && decoded != sheet && !decoded.isRecycled()) decoded.recycle();
+            sheet = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            if (sheet != null) sheet.setHasAlpha(true);
         } catch (RuntimeException ignored) {
             sheet = null;
         }
     }
 
-    /**
-     * Keep transparent background transparent, but restore the cat itself to a
-     * proper visible alpha. Some generated PNG frames contain very soft alpha;
-     * on an Android overlay that can make the whole pet look invisible.
-     */
-    private Bitmap normalizeAlpha(Bitmap source) {
-        Bitmap src = source.getConfig() == Bitmap.Config.ARGB_8888
-                ? source
-                : source.copy(Bitmap.Config.ARGB_8888, false);
-        if (src == null) return source;
-
-        int w = src.getWidth();
-        int h = src.getHeight();
-        int[] pixels = new int[w * h];
-        src.getPixels(pixels, 0, w, 0, 0, w, h);
-
-        int visible = 0;
-        for (int i = 0; i < pixels.length; i++) {
-            int p = pixels[i];
-            int a = Color.alpha(p);
-            if (a <= 2) {
-                pixels[i] = Color.TRANSPARENT;
-                continue;
-            }
-            visible++;
-            int boosted;
-            if (a >= 40) boosted = 255;
-            else boosted = Math.min(255, a * 6);
-            pixels[i] = Color.argb(boosted, Color.red(p), Color.green(p), Color.blue(p));
-        }
-
-        if (visible < pixels.length / 100) return source;
-
-        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        out.setPixels(pixels, 0, w, 0, 0, w, h);
-        out.setHasAlpha(true);
-        return out;
-    }
-
     public void lookAtUser(long durationMs) {
         looking = true;
         peeking = false;
-        frame = FRAME_WATCH;
+        frame = FRAME_PEEK;
         invalidate();
         handler.removeCallbacks(stopLooking);
         handler.postDelayed(stopLooking, durationMs);
@@ -125,7 +85,7 @@ public class DeskPetView extends View {
     public void peek(long durationMs) {
         if (looking) return;
         peeking = true;
-        frame = FRAME_WATCH;
+        frame = FRAME_PEEK;
         invalidate();
         handler.postDelayed(() -> {
             if (!released) {
@@ -162,7 +122,7 @@ public class DeskPetView extends View {
                         frame = FRAME_IDLE;
                         invalidate();
                     }
-                }, 125L);
+                }, 120L);
             }
             handler.postDelayed(this, 2600L + random.nextInt(3300));
         }
@@ -172,16 +132,16 @@ public class DeskPetView extends View {
         @Override public void run() {
             if (released) return;
             if (!looking && !peeking) {
-                int roll = random.nextInt(7);
+                int roll = random.nextInt(8);
                 if (roll == 0) {
-                    frame = FRAME_WAKE;
+                    frame = FRAME_SLEEP;
                     invalidate();
                     handler.postDelayed(() -> {
                         if (!released && !looking && !peeking) {
                             frame = FRAME_IDLE;
                             invalidate();
                         }
-                    }, 850L);
+                    }, 900L);
                 } else if (roll == 1) {
                     frame = FRAME_HAPPY;
                     invalidate();
@@ -190,7 +150,7 @@ public class DeskPetView extends View {
                             frame = FRAME_IDLE;
                             invalidate();
                         }
-                    }, 720L);
+                    }, 760L);
                 } else if (roll == 2) {
                     peek(1100L);
                 }
@@ -202,11 +162,11 @@ public class DeskPetView extends View {
     private final Runnable breatheLoop = new Runnable() {
         @Override public void run() {
             if (released) return;
-            breath += breathUp ? .055f : -.055f;
+            breath += breathUp ? .05f : -.05f;
             if (breath >= 1f) { breath = 1f; breathUp = false; }
             if (breath <= 0f) { breath = 0f; breathUp = true; }
             invalidate();
-            handler.postDelayed(this, 90L);
+            handler.postDelayed(this, 95L);
         }
     };
 
@@ -222,10 +182,10 @@ public class DeskPetView extends View {
         int safeFrame = Math.max(0, Math.min(frame, DeskPetSpriteData.FRAME_COUNT - 1));
         Rect src = new Rect(safeFrame * fw, 0, (safeFrame + 1) * fw, fh);
 
-        float bob = breath * getHeight() * .0065f;
-        float peekShift = peeking ? getHeight() * .16f : 0f;
-        float insetX = getWidth() * .025f;
-        float insetY = getHeight() * .025f;
+        float bob = breath * getHeight() * .0055f;
+        float peekShift = peeking ? getHeight() * .13f : 0f;
+        float insetX = getWidth() * .015f;
+        float insetY = getHeight() * .015f;
         RectF dst = new RectF(
                 insetX,
                 insetY + bob + peekShift,
@@ -234,7 +194,7 @@ public class DeskPetView extends View {
 
         paint.setAlpha(255);
         paint.setColorFilter(null);
-        paint.setShadowLayer(getHeight() * .045f, 0f, getHeight() * .022f, 0x42000000);
+        paint.setShadowLayer(getHeight() * .035f, 0f, getHeight() * .018f, 0x33000000);
         canvas.drawBitmap(sheet, src, dst, paint);
         paint.clearShadowLayer();
     }
@@ -262,11 +222,11 @@ public class DeskPetView extends View {
         canvas.drawOval(new RectF(w * .24f, h * .34f, w * .76f, h * .82f), fallbackPaint);
         fallbackPaint.clearShadowLayer();
 
-        fallbackPaint.setColor(0xFF9AC7A5);
-        canvas.drawOval(new RectF(w * .36f, h * .52f, w * .43f, h * .59f), fallbackPaint);
-        canvas.drawOval(new RectF(w * .57f, h * .52f, w * .64f, h * .59f), fallbackPaint);
+        fallbackPaint.setColor(0xFFB7E8C1);
+        canvas.drawOval(new RectF(w * .35f, h * .50f, w * .44f, h * .60f), fallbackPaint);
+        canvas.drawOval(new RectF(w * .56f, h * .50f, w * .65f, h * .60f), fallbackPaint);
 
         fallbackPaint.setColor(0xFFD7B15A);
-        canvas.drawCircle(w * .50f, h * .75f, h * .055f, fallbackPaint);
+        canvas.drawCircle(w * .50f, h * .75f, h * .052f, fallbackPaint);
     }
 }
