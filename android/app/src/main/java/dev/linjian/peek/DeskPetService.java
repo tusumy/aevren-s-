@@ -104,18 +104,18 @@ public class DeskPetService extends Service {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        bubbleLp.topMargin = dp(4);
+        bubbleLp.topMargin = dp(2);
         root.addView(bubble, bubbleLp);
 
         pet = new DeskPetView(this);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
-        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(112), dp(166),
+        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(154), dp(104),
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        int width = dp(184), height = dp(220);
+        int width = dp(184), height = dp(150);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
@@ -174,7 +174,6 @@ public class DeskPetService extends Service {
             case MotionEvent.ACTION_UP:
                 pet.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(130).start();
                 if (dragging) {
-                    // v2: stop exactly where the user releases it. No edge snapping.
                     savePosition();
                 } else {
                     handleTap();
@@ -251,10 +250,7 @@ public class DeskPetService extends Service {
         @Override public void run() {
             if (pet == null) return;
             if (!dragging) {
-                // Keep idle life subtle: occasional ear twitch only.
                 if (random.nextInt(7) == 0) pet.earTwitch();
-
-                // Watch mode may occasionally look at the user and surface one very short thought.
                 if (watchMode && random.nextInt(9) == 0) {
                     pet.lookAtUser(1800);
                     if (random.nextBoolean()) showBubble(randomLine(WATCH_LINES));
