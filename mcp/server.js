@@ -990,20 +990,20 @@ function registerWalletTakeoutTools(server, { includeUnified = false } = {}) {
 }
 
 function makeWalletTakeoutServer() {
-  const server = new McpServer({ name: "掌心窗小金库外卖", version: "0.3.8.4" });
+  const server = new McpServer({ name: "掌心窗小金库外卖", version: "0.3.8.8" });
   server.tool("linjian_status", "检查掌心窗后端、MCP 配置，以及当前是否使用小金库/外卖专用 schema。", {}, async () => {
     const configErrors = [];
     if (!LINJIAN_URL_CANDIDATES.length) configErrors.push("Missing env LINJIAN_URL");
     if (!LINJIAN_TOKEN) configErrors.push("Missing env LINJIAN_TOKEN");
     const health = configErrors.length ? { ok: false, error: configErrors.join("; ") } : await linjianFetch("/health").then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
-    return textResult({ ok: true, schema_mode: "wallet_takeout_only", version: "0.3.8.4", has_url: Boolean(LINJIAN_URL_CANDIDATES.length), has_token: Boolean(LINJIAN_TOKEN), linjian_url: effectiveLinjianUrl(), health, tools: Array.from(WALLET_TAKEOUT_ACTIONS), note: "如果普通 /mcp 里新增工具没有暴露，请让 AI 客户端连接 /mcp-wallet。" });
+    return textResult({ ok: true, schema_mode: "wallet_takeout_only", version: "0.3.8.8", has_url: Boolean(LINJIAN_URL_CANDIDATES.length), has_token: Boolean(LINJIAN_TOKEN), linjian_url: effectiveLinjianUrl(), health, tools: Array.from(WALLET_TAKEOUT_ACTIONS), note: "如果普通 /mcp 里新增工具没有暴露，请让 AI 客户端连接 /mcp-wallet。" });
   });
   registerWalletTakeoutTools(server, { includeUnified: true });
   return server;
 }
 
 function makeServer() {
-  const server = new McpServer({ name: "掌心窗", version: "0.3.8.4" });
+  const server = new McpServer({ name: "掌心窗", version: "0.3.8.8" });
   const commandBackedTools = new Set([
     "peek_screen", "get_screen_nodes", "tap_text", "input_text", "draft_xhs_comment", "xhs_comment", "send_visible_comment_after_confirmation",
     "add_guardian_calendar_event", "care_action", "trigger_guidian", "mark_guidian_returned",
@@ -1493,6 +1493,57 @@ function makeServer() {
   server.tool("read_diary_entry", "按 entry_id 读取一篇本机日记的完整正文。", {
     entry_id: z.string().min(1).max(100), ...diaryWaitFields
   }, async ({ entry_id, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => textResult({ action_done: "已读取日记", entry_id, ...(await runDiaryCommand("read_diary_entry", { entry_id }, device_id, wait_seconds)) }));
+
+  server.tool("read_diary_entry_with_annotations", "按 entry_id 读取一篇本机日记的完整正文，并一起带出用户留在段落旁的页边纸条/批注。适合机回应用户批注前先读取。", {
+    entry_id: z.string().min(1).max(100),
+    mark_seen: z.boolean().default(false).describe("读取后是否把这些纸条标记为已看"),
+    ...diaryWaitFields
+  }, async ({ entry_id, mark_seen = false, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => {
+    const result = await runDiaryCommand("read_diary_entry_with_annotations", { entry_id, mark_seen }, device_id, wait_seconds);
+    return textResult({ action_done: "已读取日记和页边纸条", entry_id, mark_seen, ...result });
+  });
+
+  server.tool("add_diary_annotation", "给某篇本机日记的一段文字添加“页边纸条”批注。通常由手机前端长按段落创建；AI 也可在用户明确要求代写纸条时使用。", {
+    entry_id: z.string().min(1).max(100),
+    paragraph_index: z.number().int().min(0).default(0),
+    quote_text: z.string().max(800).default(""),
+    annotation_text: z.string().min(1).max(1000),
+    mood: z.string().max(30).default("想回应"),
+    style: z.string().max(40).default("margin_note"),
+    ...diaryWaitFields
+  }, async ({ entry_id, paragraph_index = 0, quote_text = "", annotation_text, mood = "想回应", style = "margin_note", device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => {
+    const result = await runDiaryCommand("add_diary_annotation", { entry_id, paragraph_index, quote_text, annotation_text, mood, style, created_by: "user" }, device_id, wait_seconds);
+    return textResult({ action_done: "页边纸条已保存", entry_id, paragraph_index, mood, ...result });
+  });
+
+  server.tool("list_diary_annotations", "读取用户在本机日记里留下的页边纸条/批注。可按 book_id、entry_id 或 unread_only 筛选，适合机查看用户新批注。", {
+    book_id: z.string().max(100).default(""),
+    entry_id: z.string().max(100).default(""),
+    unread_only: z.boolean().default(false),
+    ...diaryWaitFields
+  }, async ({ book_id = "", entry_id = "", unread_only = false, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => {
+    const result = await runDiaryCommand("list_diary_annotations", { book_id, entry_id, unread_only }, device_id, wait_seconds);
+    return textResult({ action_done: "已读取页边纸条", book_id, entry_id, unread_only, ...result });
+  });
+
+  server.tool("mark_diary_annotations_seen", "把某张纸条或某篇日记下的纸条标记为已看。AI 读完未读批注并回应后使用。", {
+    annotation_id: z.string().max(100).default(""),
+    entry_id: z.string().max(100).default(""),
+    ...diaryWaitFields
+  }, async ({ annotation_id = "", entry_id = "", device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => {
+    const result = await runDiaryCommand("mark_diary_annotations_seen", { annotation_id, entry_id }, device_id, wait_seconds);
+    return textResult({ action_done: "页边纸条已标记为已看", annotation_id, entry_id, ...result });
+  });
+
+  server.tool("delete_diary_annotation", "删除一张本机日记页边纸条。必须由用户确认 confirm=true。", {
+    annotation_id: z.string().min(1).max(100),
+    confirm: z.boolean().describe("用户确认后必须明确为 true"),
+    ...diaryWaitFields
+  }, async ({ annotation_id, confirm, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => {
+    if (confirm !== true) return textResult({ ok: false, error: "confirmation_required", message: "删除页边纸条前必须把 confirm 设为 true。", annotation_id });
+    const result = await runDiaryCommand("delete_diary_annotation", { annotation_id, confirm: true }, device_id, wait_seconds);
+    return textResult({ action_done: "页边纸条已删除", annotation_id, ...result });
+  });
 
   server.tool("search_diary_entries", "在一本本机日记中按标题、正文、标签、心情关键词和日期范围搜索。", {
     book_id: z.string().min(1).max(100), keyword: z.string().max(200).default(""), date_from: z.string().max(10).default(""), date_to: z.string().max(10).default(""),
@@ -2133,7 +2184,7 @@ app.get("/", (_req, res) => res.type("text/plain").send("掌心窗 unified MCP i
 app.get("/health", (_req, res) => res.json({
   ok: true,
   service: "linjian-public-mcp",
-  version: "0.3.8.4",
+  version: "0.3.8.8",
   has_url: Boolean(LINJIAN_URL_CANDIDATES.length),
   has_token: Boolean(LINJIAN_TOKEN),
   configured_linjian_url: RAW_LINJIAN_URL || "",
@@ -2144,6 +2195,8 @@ app.get("/health", (_req, res) => res.json({
   diary_rename_fix: true,
   diary_write_fallback: true,
   diary_storage: "phone_local",
+  diary_annotation_tools: true,
+  diary_annotation_ui: "margin_notes",
   focus_tools: true,
   focus_tool_names: ["get_focus_status", "start_focus_mode", "end_focus_mode", "set_focus_plan", "reply_focus_request", "approve_focus_unlock", "deny_focus_unlock"],
   mcp_wallet_endpoint: "/mcp-wallet",
@@ -2152,7 +2205,7 @@ app.get("/health", (_req, res) => res.json({
   priority_tool: "wallet_takeout_action",
   wallet_takeout_tool_count: WALLET_TAKEOUT_ACTIONS.size,
   wallet_takeout_tools: Array.from(WALLET_TAKEOUT_ACTIONS),
-  stability_note: "v0.3.8.4 修复日记写入 book_id 兜底，并保留 v0.3.8.2 的部分客户端不暴露小金库/外卖新增 MCP 工具：普通 /mcp 提前注册统一入口，新增 /mcp-wallet 专用端点，并把专注模式工具前置注册。"
+  stability_note: "v0.3.8.8 同步公开版版本信息；普通 /mcp 提前注册统一入口，新增 /mcp-wallet 专用端点，并把专注模式工具前置注册，兼容部分客户端不暴露新增工具的问题。"
 }));
 app.post("/mcp", async (req, res) => {
   try { const server = makeServer(); const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined }); res.on("close", () => transport.close()); await server.connect(transport); await transport.handleRequest(req, res, req.body); }

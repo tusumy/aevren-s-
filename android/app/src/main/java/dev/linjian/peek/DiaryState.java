@@ -18,12 +18,14 @@ import java.util.UUID;
 public final class DiaryState {
     public static final String KEY_BOOKS = "ta_diary_books_json";
     public static final String KEY_ENTRIES = "ta_diary_entries_json";
+    public static final String KEY_ANNOTATIONS = "ta_diary_annotations_json";
     public static final String DEFAULT_COVER = "default_soft_notebook";
 
     private DiaryState() { }
 
     public static JSONArray books(Context ctx) { return readArray(ctx, KEY_BOOKS); }
     public static JSONArray entries(Context ctx) { return readArray(ctx, KEY_ENTRIES); }
+    public static JSONArray annotations(Context ctx) { return readArray(ctx, KEY_ANNOTATIONS); }
 
     public static JSONObject bookById(Context ctx, String id) { return findById(books(ctx), id); }
     public static JSONObject entryById(Context ctx, String id) { return findById(entries(ctx), id); }
@@ -191,8 +193,13 @@ public final class DiaryState {
                 if (id.equals(entry.optString("id", ""))) removed = entry; else next.put(entry);
             }
             if (removed == null) return out.put("ok", false).put("error", "entry_not_found");
-            if (!saveArray(ctx, KEY_ENTRIES, next)) return out.put("ok", false).put("error", "save_failed");
-            return out.put("ok", true).put("entry_id", id).put("book_id", removed.optString("book_id")).put("title", removed.optString("title")).put("date", removed.optString("date")).put("message", "日记已删除");
+            JSONArray allNotes = annotations(ctx), nextNotes = new JSONArray(); int removedNotes = 0;
+            for (int i = 0; i < allNotes.length(); i++) {
+                JSONObject note = allNotes.optJSONObject(i); if (note == null) continue;
+                if (id.equals(note.optString("entry_id", ""))) removedNotes++; else nextNotes.put(note);
+            }
+            if (!AppPrefs.get(ctx).edit().putString(KEY_ENTRIES, next.toString()).putString(KEY_ANNOTATIONS, nextNotes.toString()).commit()) return out.put("ok", false).put("error", "save_failed");
+            return out.put("ok", true).put("entry_id", id).put("book_id", removed.optString("book_id")).put("title", removed.optString("title")).put("date", removed.optString("date")).put("deleted_annotation_count", removedNotes).put("message", "日记已删除");
         } catch (Exception e) { return error(out, e); }
     }
 
@@ -210,26 +217,122 @@ public final class DiaryState {
                 JSONObject entry = allEntries.optJSONObject(i); if (entry == null) continue;
                 if (id.equals(entry.optString("book_id", ""))) removedEntries++; else nextEntries.put(entry);
             }
-            if (!AppPrefs.get(ctx).edit().putString(KEY_BOOKS, nextBooks.toString()).putString(KEY_ENTRIES, nextEntries.toString()).commit()) return out.put("ok", false).put("error", "save_failed");
-            return out.put("ok", true).put("book_id", id).put("name", removed.optString("name")).put("deleted_entry_count", removedEntries).put("message", "日记本和其中的日记已删除");
+            JSONArray allNotes = annotations(ctx), nextNotes = new JSONArray(); int removedNotes = 0;
+            for (int i = 0; i < allNotes.length(); i++) {
+                JSONObject note = allNotes.optJSONObject(i); if (note == null) continue;
+                if (id.equals(note.optString("book_id", ""))) removedNotes++; else nextNotes.put(note);
+            }
+            if (!AppPrefs.get(ctx).edit().putString(KEY_BOOKS, nextBooks.toString()).putString(KEY_ENTRIES, nextEntries.toString()).putString(KEY_ANNOTATIONS, nextNotes.toString()).commit()) return out.put("ok", false).put("error", "save_failed");
+            return out.put("ok", true).put("book_id", id).put("name", removed.optString("name")).put("deleted_entry_count", removedEntries).put("deleted_annotation_count", removedNotes).put("message", "日记本和其中的日记已删除");
         } catch (Exception e) { return error(out, e); }
+    }
+
+    public static JSONArray annotationsForEntry(Context ctx, String entryId) {
+        return listAnnotations(ctx, "", entryId, false).optJSONArray("annotations");
+    }
+
+    public static JSONObject addAnnotation(Context ctx, String entryId, int paragraphIndex, String quoteText, String annotationText, String mood, String style, String createdBy) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONObject entry = entryById(ctx, clean(entryId));
+            if (entry == null) return out.put("ok", false).put("error", "entry_not_found").put("message", "没有找到这篇日记，纸条没有保存。");
+            String text = clean(annotationText);
+            if (text.isEmpty()) return out.put("ok", false).put("error", "annotation_required").put("message", "纸条内容不能为空。");
+            JSONObject note = new JSONObject();
+            note.put("id", "anno_" + UUID.randomUUID().toString());
+            note.put("entry_id", entry.optString("id", ""));
+            note.put("book_id", entry.optString("book_id", ""));
+            note.put("paragraph_index", Math.max(0, paragraphIndex));
+            note.put("quote_text", limit(clean(quoteText), 800));
+            note.put("annotation_text", limit(text, 1000));
+            note.put("mood", limit(clean(mood).isEmpty() ? "想回应" : clean(mood), 30));
+            note.put("style", limit(clean(style).isEmpty() ? "margin_note" : clean(style), 40));
+            note.put("created_by", limit(clean(createdBy).isEmpty() ? "user" : clean(createdBy), 30));
+            note.put("seen_by_companion", false);
+            note.put("created_at", now());
+            note.put("updated_at", now());
+            JSONArray all = annotations(ctx); all.put(note);
+            if (!saveArray(ctx, KEY_ANNOTATIONS, all)) return out.put("ok", false).put("error", "save_failed");
+            return out.put("ok", true).put("annotation", note).put("annotation_id", note.optString("id")).put("entry_id", entry.optString("id")).put("book_id", entry.optString("book_id")).put("message", "页边纸条已保存");
+        } catch (Exception e) { return error(out, e); }
+    }
+
+    public static JSONObject listAnnotations(Context ctx, String bookId, String entryId, boolean unreadOnly) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONArray all = annotations(ctx), found = new JSONArray();
+            String b = clean(bookId), e = clean(entryId);
+            for (int i = 0; i < all.length(); i++) {
+                JSONObject note = all.optJSONObject(i); if (note == null) continue;
+                if (!b.isEmpty() && !b.equals(note.optString("book_id", ""))) continue;
+                if (!e.isEmpty() && !e.equals(note.optString("entry_id", ""))) continue;
+                if (unreadOnly && note.optBoolean("seen_by_companion", false)) continue;
+                found.put(note);
+            }
+            return out.put("ok", true).put("book_id", b).put("entry_id", e).put("unread_only", unreadOnly).put("annotations", found).put("count", found.length()).put("message", "已读取页边纸条");
+        } catch (Exception ex) { return error(out, ex); }
+    }
+
+    public static JSONObject readEntryWithAnnotations(Context ctx, String entryId, boolean markSeen) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONObject entry = entryById(ctx, clean(entryId));
+            if (entry == null) return out.put("ok", false).put("error", "entry_not_found");
+            JSONObject notes = listAnnotations(ctx, "", entry.optString("id", ""), false);
+            if (markSeen) markAnnotationsSeen(ctx, "", entry.optString("id", ""));
+            return out.put("ok", true).put("entry", entry).put("annotations", notes.optJSONArray("annotations")).put("annotation_count", notes.optInt("count", 0)).put("message", "已读取日记和页边纸条");
+        } catch (Exception e) { return error(out, e); }
+    }
+
+    public static JSONObject markAnnotationsSeen(Context ctx, String annotationId, String entryId) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONArray all = annotations(ctx); int changed = 0; String id = clean(annotationId), e = clean(entryId);
+            for (int i = 0; i < all.length(); i++) {
+                JSONObject note = all.optJSONObject(i); if (note == null) continue;
+                boolean hit = (!id.isEmpty() && id.equals(note.optString("id", ""))) || (!e.isEmpty() && e.equals(note.optString("entry_id", "")));
+                if (hit && !note.optBoolean("seen_by_companion", false)) { note.put("seen_by_companion", true); note.put("updated_at", now()); changed++; }
+            }
+            if (!saveArray(ctx, KEY_ANNOTATIONS, all)) return out.put("ok", false).put("error", "save_failed");
+            return out.put("ok", true).put("changed_count", changed).put("message", "页边纸条已标记为已看");
+        } catch (Exception ex) { return error(out, ex); }
+    }
+
+    public static JSONObject deleteAnnotation(Context ctx, String annotationId) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONArray all = annotations(ctx), next = new JSONArray(); JSONObject removed = null;
+            for (int i = 0; i < all.length(); i++) {
+                JSONObject note = all.optJSONObject(i); if (note == null) continue;
+                if (clean(annotationId).equals(note.optString("id", ""))) removed = note; else next.put(note);
+            }
+            if (removed == null) return out.put("ok", false).put("error", "annotation_not_found");
+            if (!saveArray(ctx, KEY_ANNOTATIONS, next)) return out.put("ok", false).put("error", "save_failed");
+            return out.put("ok", true).put("annotation_id", annotationId).put("entry_id", removed.optString("entry_id")).put("message", "页边纸条已删除");
+        } catch (Exception e) { return error(out, e); }
+    }
+
+    public static int annotationCount(Context ctx, String entryId) {
+        JSONArray arr = annotationsForEntry(ctx, entryId);
+        return arr == null ? 0 : arr.length();
     }
 
     public static JSONObject exportBundle(Context ctx) {
         JSONObject out = new JSONObject();
-        try { return out.put("format", "linjian-ta-diary-backup").put("version", 1).put("exported_at", now()).put("books", books(ctx)).put("entries", entries(ctx)); }
+        try { return out.put("format", "linjian-ta-diary-backup").put("version", 2).put("exported_at", now()).put("books", books(ctx)).put("entries", entries(ctx)).put("annotations", annotations(ctx)); }
         catch (Exception e) { return error(out, e); }
     }
 
     public static JSONObject importBundle(Context ctx, String raw) {
         JSONObject out = new JSONObject();
         try {
-            JSONObject bundle = new JSONObject(raw); JSONArray incomingBooks = bundle.optJSONArray("books"), incomingEntries = bundle.optJSONArray("entries");
+            JSONObject bundle = new JSONObject(raw); JSONArray incomingBooks = bundle.optJSONArray("books"), incomingEntries = bundle.optJSONArray("entries"), incomingAnnotations = bundle.optJSONArray("annotations");
             if (incomingBooks == null || incomingEntries == null) return out.put("ok", false).put("error", "invalid_backup");
             JSONArray mergedBooks = mergeById(books(ctx), incomingBooks, "book_");
             JSONArray mergedEntries = mergeById(entries(ctx), incomingEntries, "entry_");
-            if (!AppPrefs.get(ctx).edit().putString(KEY_BOOKS, mergedBooks.toString()).putString(KEY_ENTRIES, mergedEntries.toString()).commit()) return out.put("ok", false).put("error", "save_failed");
-            return out.put("ok", true).put("book_count", mergedBooks.length()).put("entry_count", mergedEntries.length()).put("message", "日记备份已导入");
+            JSONArray mergedAnnotations = mergeById(annotations(ctx), incomingAnnotations == null ? new JSONArray() : incomingAnnotations, "anno_");
+            if (!AppPrefs.get(ctx).edit().putString(KEY_BOOKS, mergedBooks.toString()).putString(KEY_ENTRIES, mergedEntries.toString()).putString(KEY_ANNOTATIONS, mergedAnnotations.toString()).commit()) return out.put("ok", false).put("error", "save_failed");
+            return out.put("ok", true).put("book_count", mergedBooks.length()).put("entry_count", mergedEntries.length()).put("annotation_count", mergedAnnotations.length()).put("message", "日记备份已导入");
         } catch (Exception e) { return error(out, e); }
     }
 
@@ -244,6 +347,11 @@ public final class DiaryState {
             else if ("write_diary_entry".equals(action)) out = writeEntry(ctx, cmd.optString("book_id"), firstNonEmpty(cmd.optString("book_name"), cmd.optString("book_title")), cmd.optString("title"), cmd.optString("content"), cmd.optString("mood"), cmd.optJSONArray("tags"), cmd.optString("date"), cmd.optString("time_label"));
             else if ("list_diary_entries".equals(action)) out.put("ok", true).put("book_id", cmd.optString("book_id")).put("entries", listEntries(ctx, cmd.optString("book_id"))).put("message", "已读取本机日记列表");
             else if ("read_diary_entry".equals(action)) { JSONObject entry = entryById(ctx, cmd.optString("entry_id")); if (entry == null) out.put("ok", false).put("error", "entry_not_found"); else out.put("ok", true).put("entry", entry).put("message", "已读取日记"); }
+            else if ("read_diary_entry_with_annotations".equals(action)) out = readEntryWithAnnotations(ctx, cmd.optString("entry_id"), cmd.optBoolean("mark_seen", false));
+            else if ("add_diary_annotation".equals(action)) out = addAnnotation(ctx, cmd.optString("entry_id"), cmd.optInt("paragraph_index", 0), cmd.optString("quote_text"), cmd.optString("annotation_text", cmd.optString("content")), cmd.optString("mood"), cmd.optString("style"), cmd.optString("created_by", "user"));
+            else if ("list_diary_annotations".equals(action)) out = listAnnotations(ctx, cmd.optString("book_id"), cmd.optString("entry_id"), cmd.optBoolean("unread_only", false));
+            else if ("mark_diary_annotations_seen".equals(action)) out = markAnnotationsSeen(ctx, cmd.optString("annotation_id"), cmd.optString("entry_id"));
+            else if ("delete_diary_annotation".equals(action)) out = cmd.optBoolean("confirm", false) ? deleteAnnotation(ctx, cmd.optString("annotation_id")) : out.put("ok", false).put("error", "confirmation_required");
             else if ("search_diary_entries".equals(action)) out.put("ok", true).put("book_id", cmd.optString("book_id")).put("entries", search(ctx, cmd.optString("book_id"), cmd.optString("keyword"), cmd.optString("date_from"), cmd.optString("date_to"), cmd.optJSONArray("tags"))).put("message", "日记搜索完成");
             else if ("update_diary_entry".equals(action)) out = updateEntry(ctx, cmd.optString("entry_id"), cmd);
             else if ("delete_diary_entry".equals(action)) out = cmd.optBoolean("confirm", false) ? deleteEntry(ctx, cmd.optString("entry_id")) : out.put("ok", false).put("error", "confirmation_required");

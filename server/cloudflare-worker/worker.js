@@ -1,4 +1,4 @@
-const VERSION = "0.3.8.4-public-focus";
+const VERSION = "0.3.8.8-public-diary-annotations";
 // MCP Apps clients cache UI resources by URI. Change the URI whenever the HTML changes.
 const STICKER_WIDGET_URI = "ui://linjian/sticker-card-v0433.html";
 const STICKER_WIDGET_ORIGIN = "https://linjian-peek-cloudflare.linzhi524.workers.dev";
@@ -21,7 +21,7 @@ const ALLOWED_ACTIONS = new Set([
   "deny_screen_break_release_request", "deny_break_release_request", "get_screen_break_state", "set_screen_break_passphrase",
   "add_screen_break_app", "remove_screen_break_app", "list_screen_break_apps", "get_focus_status", "start_focus_mode", "end_focus_mode", "set_focus_plan", "request_focus_unlock", "reply_focus_request", "approve_focus_unlock", "deny_focus_unlock", "temporary_focus_unlock", "get_guidian_state", "set_guidian_config",
   "trigger_guidian", "mark_guidian_returned", "get_calendar_state", "upsert_calendar_event", "add_calendar_event", "delete_calendar_event",
-  "get_wallet_state", "get_wallet_month_state", "list_wallet_months", "add_wallet_record", "list_wallet_pending", "list_wallet_approvals", "submit_wallet_approval", "confirm_wallet_record", "decide_wallet_approval", "save_wallet_request_result", "update_wallet_request_result", "get_wallet_rules", "set_wallet_rules", "wallet_approval_request", "get_takeout_state", "list_takeout_cards", "list_takeout_meals", "remember_takeout_meal", "remember_current_takeout_meal", "set_takeout_budget", "set_takeout_preferences", "add_takeout_card", "save_takeout_card", "update_takeout_card", "remove_takeout_card", "delete_takeout_card", "suggest_takeout_options", "create_takeout_plan", "takeout_wallet_request", "open_takeout_link", "copy_takeout_note", "record_takeout_order", "prepare_takeout_checkout", "auto_takeout_checkout", "get_takeout_checkout_status", "cancel_takeout_checkout"
+  "get_wallet_state", "get_wallet_month_state", "list_wallet_months", "add_wallet_record", "list_wallet_pending", "list_wallet_approvals", "submit_wallet_approval", "confirm_wallet_record", "decide_wallet_approval", "save_wallet_request_result", "update_wallet_request_result", "get_wallet_rules", "set_wallet_rules", "wallet_approval_request", "get_takeout_state", "list_takeout_cards", "list_takeout_meals", "remember_takeout_meal", "remember_current_takeout_meal", "set_takeout_budget", "set_takeout_preferences", "add_takeout_card", "save_takeout_card", "update_takeout_card", "remove_takeout_card", "delete_takeout_card", "suggest_takeout_options", "create_takeout_plan", "takeout_wallet_request", "open_takeout_link", "copy_takeout_note", "record_takeout_order", "prepare_takeout_checkout", "auto_takeout_checkout", "get_takeout_checkout_status", "cancel_takeout_checkout", "create_diary_book", "list_diary_books", "rename_diary_book", "update_diary_book_cover", "write_diary_entry", "list_diary_entries", "read_diary_entry", "read_diary_entry_with_annotations", "add_diary_annotation", "list_diary_annotations", "mark_diary_annotations_seen", "delete_diary_annotation", "search_diary_entries", "update_diary_entry", "delete_diary_entry", "delete_diary_book"
 ]);
 
 export default {
@@ -286,6 +286,17 @@ const MCP_TOOLS = [
   { name: "search_stickers", description: "按关键词、情绪、场景或语气搜索表情包库。适合找想你、亲亲、吃醋、喝水、项目成功等表情包。", inputSchema: obj({ query: str(""), emotion: str(""), scene: str(""), tone: str(""), limit: int(8) }) },
   { name: "get_sticker_detail", description: "查看某张表情包详情，可传 sticker_id 或 title。", inputSchema: obj({ sticker_id: str(""), title: str("") }) },
   { name: "send_sticker", description: "发送指定表情包并让用户直接看到图片。调用成功后，不要复述 used_count、render_mode、image_content 等工具状态；最终回复只发送 structuredContent.markdown_image 图片，可加一句很短的自然话。默认同时返回 MCP 图片本体和零脚本安全图片卡；不要调用 image generation。", inputSchema: obj({ sticker_id: str(""), title: str(""), include_image: bool(true), mark_used: bool(true) }), _meta: { ui: { resourceUri: STICKER_WIDGET_URI }, "openai/outputTemplate": STICKER_WIDGET_URI, "openai/toolInvocation/invoking": "正在翻表情包", "openai/toolInvocation/invoked": "发送了表情包" } },
+
+  { name: "create_diary_book", description: "在手机本机创建一本 TA 的日记。", inputSchema: obj({ name: str("TA 的日记"), subtitle: str("把今天看见的你，轻轻写下来。"), cover_style: str("default_soft_notebook"), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
+  { name: "list_diary_books", description: "读取手机本机日记本列表。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
+  { name: "write_diary_entry", description: "以 TA/AI 的视角把一篇日记写入手机本机。", inputSchema: obj({ book_id: str(""), book_name: str(""), title: str(""), content: str(""), mood: str(""), tags: arr({ type: "string" }, []), date: str(""), time_label: str(""), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }, ["title", "content"]) },
+  { name: "list_diary_entries", description: "按 book_id 列出本机日记。", inputSchema: obj({ book_id: str(""), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
+  { name: "read_diary_entry", description: "按 entry_id 读取一篇本机日记正文。", inputSchema: obj({ entry_id: str(""), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }, ["entry_id"]) },
+  { name: "read_diary_entry_with_annotations", description: "读取一篇本机日记，并带出用户留下的页边纸条/批注。", inputSchema: obj({ entry_id: str(""), mark_seen: bool(false), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }, ["entry_id"]) },
+  { name: "add_diary_annotation", description: "给某篇本机日记的一段文字添加页边纸条批注。", inputSchema: obj({ entry_id: str(""), paragraph_index: int(0), quote_text: str(""), annotation_text: str(""), mood: str("想回应"), style: str("margin_note"), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }, ["entry_id", "annotation_text"]) },
+  { name: "list_diary_annotations", description: "读取用户在本机日记里留下的页边纸条/批注。", inputSchema: obj({ book_id: str(""), entry_id: str(""), unread_only: bool(false), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
+  { name: "mark_diary_annotations_seen", description: "把某张纸条或某篇日记下的纸条标记为已看。", inputSchema: obj({ annotation_id: str(""), entry_id: str(""), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
+  { name: "delete_diary_annotation", description: "删除一张本机日记页边纸条，需确认。", inputSchema: obj({ annotation_id: str(""), confirm: bool(false), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }, ["annotation_id", "confirm"]) },
 
   { name: "send_notification", description: "发送手机系统通知提醒。", inputSchema: obj({ title: str("掌心窗提醒"), message: str(""), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }, ["message"]) },
   { name: "open_app", description: "打开指定 App；app 可填 小红书/微信/QQ/抖音/ChatGPT，或传 package。", inputSchema: obj({ app: str(""), package: str(""), device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
@@ -700,6 +711,20 @@ async function callMcpTool(name, args = {}, env) {
     case "search_stickers": return mcpText(await searchStickersCore(env, args || {}));
     case "get_sticker_detail": return mcpText(await getStickerDetailCore(env, args || {}));
     case "send_sticker": return sendStickerMcp(env, args || {});
+
+    case "create_diary_book":
+    case "list_diary_books":
+    case "write_diary_entry":
+    case "list_diary_entries":
+    case "read_diary_entry":
+    case "read_diary_entry_with_annotations":
+    case "add_diary_annotation":
+    case "list_diary_annotations":
+    case "mark_diary_annotations_seen":
+    case "delete_diary_annotation": {
+      const payload = withoutKeys(args || {}, ["device_id", "wait_seconds"]);
+      return observed({ action: name, ...payload, payload }, args.wait_seconds ?? 8);
+    }
 
     case "send_notification": return observed({ action: "send_notification", title: args.title || "掌心窗提醒", message: args.message || "", payload: { title: args.title || "掌心窗提醒", message: args.message || "" } }, args.wait_seconds ?? 8);
     case "open_app": return observed({ action: "open_app", app: args.app || "", package: packageFor(args.app || "", args.package || ""), payload: { app: args.app || "", package: packageFor(args.app || "", args.package || "") } }, args.wait_seconds ?? 8);

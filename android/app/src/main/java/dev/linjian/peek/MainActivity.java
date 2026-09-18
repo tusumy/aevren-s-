@@ -49,6 +49,7 @@ import android.widget.Toast;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Locale;
 import java.io.File;
@@ -135,7 +136,7 @@ public class MainActivity extends Activity {
         loadSettings();
         NowState.start(this);
 
-        DebugState.append(this, "掌心窗公开版 v0.3.8.4 已打开");
+        DebugState.append(this, "掌心窗公开版 v0.3.8.8 已打开");
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 13);
         serviceRunning = CompanionService.isRunning();
         updateUI();
@@ -172,6 +173,7 @@ public class MainActivity extends Activity {
         if (userNameInput != null) userNameInput.setOnFocusChangeListener((v, focused) -> { if (!focused) { saveSettings(); buildMagazinePages(); updateUI(); } });
         if (companionNameInput != null) companionNameInput.setOnFocusChangeListener((v, focused) -> { if (!focused) { saveSettings(); buildMagazinePages(); updateUI(); } });
         if (targetAppsInput != null) targetAppsInput.setOnFocusChangeListener((v, focused) -> { if (!focused) { saveSettings(); updateUI(); } });
+        bindHomeModeAutoSave();
         bindConnectionAutoSave();
 
         bindThemeButton(themeCreamButton, "奶油绿"); bindThemeButton(themeBlueButton, "雾蓝白"); bindThemeButton(themePeachButton, "白桃粉"); bindThemeButton(themeNightButton, "夜航黑"); bindThemeButton(themeMintButton, "薄荷透明"); bindThemeButton(themePurpleButton, "星云紫");
@@ -259,7 +261,7 @@ public class MainActivity extends Activity {
             deskPet.setTag("dynamic_desk_pet");
             deskPet.setVisibility(View.GONE);
             deskPet.addView(title("玄砚桌宠", 15));
-            deskPet.addView(body("让玄砚常驻手机桌面：会沿屏幕边缘散步、发呆，支持点击和拖动。", 9), matchWrapTop(6));
+            deskPet.addView(body("让玄砚常驻手机桌面：会呼吸、眨眼、发呆，支持点击和拖动。", 9), matchWrapTop(6));
             CheckBox deskPetToggle = new CheckBox(this);
             deskPetToggle.setText("显示在手机桌面");
             deskPetToggle.setTextSize(11);
@@ -896,17 +898,144 @@ public class MainActivity extends Activity {
         LinearLayout paper = new LinearLayout(this); paper.setTag("diary_paper"); paper.setOrientation(LinearLayout.VERTICAL); paper.setPadding(dp(20), dp(18), dp(20), dp(20)); paper.setBackground(new DiaryPaperDrawable()); paper.setElevation(dp(2));
         String entryId = entry.optString("id", "");
         boolean current = entryId.equals(diaryCurrentEntryId);
+        int annotationCount = DiaryState.annotationCount(this, entryId);
         LinearLayout meta = horizontal(); TextView time = label(entry.optString("time_label", entry.optString("created_at", "").length() >= 16 ? entry.optString("created_at").substring(11, 16) : ""), 8); time.setTextColor(Color.parseColor("#967584")); meta.addView(time, weightedWrap(1f, 0));
         String moodText = entry.optString("mood", "").trim(); TextView mood = label(moodText, 8); if (moodText.isEmpty()) mood.setVisibility(View.GONE); else { mood.setTextColor(Color.parseColor("#9B6E80")); mood.setPadding(dp(8), dp(2), dp(8), dp(2)); GradientDrawable moodBg = new GradientDrawable(); moodBg.setColor(Color.parseColor("#F7E7ED")); moodBg.setCornerRadius(dp(12)); moodBg.setStroke(dp(1), Color.parseColor("#E8CBD6")); mood.setBackground(moodBg); } meta.addView(mood); paper.addView(meta);
         TextView heading = title(entry.optString("title", "没有标题的一页"), 16); heading.setTypeface(Typeface.create("serif", Typeface.BOLD)); heading.setTextColor(Color.parseColor("#513E48")); paper.addView(heading, matchWrapTop(10));
-        TextView content = body(entry.optString("content", ""), 11); content.setTypeface(Typeface.create("serif", Typeface.NORMAL)); content.setTextColor(Color.parseColor("#66535C")); content.setLineSpacing(dp(8), 1f); setDiaryEntryExpanded(content, current); paper.addView(content, matchWrapTop(10));
+
+        if (current) {
+            paper.addView(buildDiaryAnnotationHint(annotationCount), matchWrapTop(10));
+            paper.addView(buildDiaryAnnotatedContent(entry), matchWrapTop(9));
+        } else {
+            TextView content = body(entry.optString("content", ""), 11); content.setTypeface(Typeface.create("serif", Typeface.NORMAL)); content.setTextColor(Color.parseColor("#66535C")); content.setLineSpacing(dp(8), 1f); setDiaryEntryExpanded(content, false); paper.addView(content, matchWrapTop(10));
+            if (annotationCount > 0) paper.addView(buildDiaryPaperCountRow(annotationCount), matchWrapTop(9));
+        }
+
         String tags = diaryTagsText(entry.optJSONArray("tags")); if (!tags.isEmpty()) { TextView tagView = body(tags, 8); tagView.setTextColor(Color.parseColor("#A47788")); paper.addView(tagView, matchWrapTop(14)); }
         TextView expandHint = label(current ? "收起全文  ↑" : "点击展开全文  ↓", 8); expandHint.setTextColor(Color.parseColor("#A47788")); paper.addView(expandHint, matchWrapTop(11));
-        if (current) { diaryExpandedPaperView = paper; diaryExpandedContentView = content; diaryExpandedHintView = expandHint; }
         paper.setContentDescription(current ? "点击收起这篇日记" : "点击展开这篇日记");
-        paper.setOnClickListener(v -> toggleDiaryEntryPaper(paper, content, expandHint, entryId)); paper.setClickable(true); paper.setFocusable(true);
+        paper.setOnClickListener(v -> { diaryCurrentEntryId = current ? "" : entryId; replaceScrollContent(sectionSee, buildDiaryContentPage(null)); animateDiaryPageSwap(); });
+        paper.setClickable(true); paper.setFocusable(true);
         return paper;
     }
+
+    private View buildDiaryAnnotationHint(int annotationCount) {
+        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(10), dp(7), dp(10), dp(7));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#FFFFFBFD")); bg.setCornerRadius(dp(16)); bg.setStroke(dp(1), Color.parseColor("#F0DCE4")); row.setBackground(bg);
+        TextView hint = label("☞ 长按段落，留一张页边纸条", 8); hint.setTextColor(Color.parseColor("#9B6E80")); row.addView(hint, weightedWrap(1f, 0));
+        if (annotationCount > 0) { TextView count = label("这篇 " + annotationCount + " 张", 8); count.setTextColor(Color.parseColor("#B17286")); row.addView(count); }
+        return row;
+    }
+
+    private View buildDiaryPaperCountRow(int annotationCount) {
+        TextView count = label("✎ 这篇日记有 " + annotationCount + " 张页边纸条", 8); count.setTextColor(Color.parseColor("#B17286")); count.setPadding(dp(9), dp(4), dp(9), dp(4));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#FFF7F9")); bg.setCornerRadius(dp(13)); bg.setStroke(dp(1), Color.parseColor("#F0D2DD")); count.setBackground(bg);
+        return count;
+    }
+
+    private View buildDiaryAnnotatedContent(JSONObject entry) {
+        LinearLayout wrap = new LinearLayout(this); wrap.setOrientation(LinearLayout.VERTICAL);
+        final String entryId = entry.optString("id", "");
+        final JSONArray allNotes = DiaryState.annotationsForEntry(this, entryId);
+        ArrayList<String> paragraphs = diaryParagraphs(entry.optString("content", ""));
+        if (paragraphs.isEmpty()) {
+            TextView empty = body("这一页还是空白的。", 10); empty.setTextColor(Color.parseColor("#8F7882")); wrap.addView(empty);
+            return wrap;
+        }
+        for (int i = 0; i < paragraphs.size(); i++) {
+            final int index = i;
+            final String quote = paragraphs.get(i);
+            JSONArray notes = diaryNotesForParagraph(allNotes, index);
+            LinearLayout block = new LinearLayout(this); block.setOrientation(LinearLayout.VERTICAL); block.setPadding(dp(11), dp(9), dp(11), dp(9));
+            if (notes.length() > 0) {
+                GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#FFF4F7")); bg.setCornerRadius(dp(14)); bg.setStroke(dp(1), Color.parseColor("#F0CCD8")); block.setBackground(bg);
+            }
+            TextView paragraph = body(quote, 11); paragraph.setTypeface(Typeface.create("serif", Typeface.NORMAL)); paragraph.setTextColor(Color.parseColor("#66535C")); paragraph.setLineSpacing(dp(7), 1f); block.addView(paragraph);
+            block.setOnLongClickListener(v -> { showAddDiaryAnnotationDialog(entry, index, quote); return true; });
+            paragraph.setOnLongClickListener(v -> { showAddDiaryAnnotationDialog(entry, index, quote); return true; });
+            block.setContentDescription("长按给这一段留下页边纸条");
+            if (notes.length() > 0) {
+                LinearLayout noteHead = horizontal(); noteHead.setGravity(Gravity.CENTER_VERTICAL); noteHead.setPadding(0, dp(8), 0, 0);
+                TextView line = new TextView(this); line.setText("│"); line.setTextColor(Color.parseColor("#D9899F")); line.setTextSize(18); noteHead.addView(line);
+                TextView chip = label(notes.length() + " 张纸条", 8); chip.setTextColor(Color.parseColor("#B17286")); chip.setPadding(dp(8), dp(3), dp(8), dp(3)); GradientDrawable chipBg = new GradientDrawable(); chipBg.setColor(Color.parseColor("#FFE8F0")); chipBg.setCornerRadius(dp(13)); chipBg.setStroke(dp(1), Color.parseColor("#E8BBC9")); chip.setBackground(chipBg); noteHead.addView(chip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                TextView addMore = label("  长按可再贴一张", 8); addMore.setTextColor(Color.parseColor("#B8939F")); noteHead.addView(addMore, weightedWrap(1f, 0));
+                block.addView(noteHead);
+                for (int j = 0; j < Math.min(notes.length(), 2); j++) {
+                    JSONObject note = notes.optJSONObject(j); if (note == null) continue;
+                    block.addView(buildDiaryNotePreview(note), matchWrapTop(7));
+                }
+                if (notes.length() > 2) { TextView more = label("还有 " + (notes.length() - 2) + " 张，轻点纸条查看", 8); more.setTextColor(Color.parseColor("#B17286")); block.addView(more, matchWrapTop(5)); }
+            }
+            LinearLayout.LayoutParams lp = matchWrapTop(i == 0 ? 0 : 9); wrap.addView(block, lp);
+        }
+        return wrap;
+    }
+
+    private View buildDiaryNotePreview(JSONObject note) {
+        LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#FFFFFBF4")); bg.setCornerRadius(dp(12)); bg.setStroke(dp(1), Color.parseColor("#F1D8C9")); card.setBackground(bg); card.setElevation(dp(1));
+        TextView tape = label("━━", 8); tape.setTextColor(Color.parseColor("#E8B7C4")); tape.setGravity(Gravity.CENTER); card.addView(tape);
+        TextView text = body(note.optString("annotation_text", ""), 9); text.setTextColor(Color.parseColor("#6B555D")); text.setLineSpacing(dp(3), 1f); card.addView(text, matchWrapTop(2));
+        String meta = note.optString("mood", "想回应"); String time = note.optString("created_at", ""); if (time.length() >= 16) meta += " · " + time.substring(5, 16);
+        TextView info = label(meta, 8); info.setTextColor(Color.parseColor("#B08D98")); card.addView(info, matchWrapTop(6));
+        card.setOnClickListener(v -> showDiaryAnnotationDetailDialog(note)); card.setClickable(true); card.setFocusable(true);
+        return card;
+    }
+
+    private ArrayList<String> diaryParagraphs(String content) {
+        ArrayList<String> out = new ArrayList<>();
+        String text = content == null ? "" : content.trim();
+        if (text.isEmpty()) return out;
+        String[] chunks = text.split("\\n\\s*\\n");
+        for (String chunk : chunks) { String v = chunk.trim(); if (!v.isEmpty()) out.add(v); }
+        if (out.isEmpty()) out.add(text);
+        return out;
+    }
+
+    private JSONArray diaryNotesForParagraph(JSONArray allNotes, int paragraphIndex) {
+        JSONArray out = new JSONArray();
+        if (allNotes == null) return out;
+        for (int i = 0; i < allNotes.length(); i++) { JSONObject note = allNotes.optJSONObject(i); if (note != null && note.optInt("paragraph_index", -1) == paragraphIndex) out.put(note); }
+        return out;
+    }
+
+    private void showAddDiaryAnnotationDialog(JSONObject entry, int paragraphIndex, String quoteText) {
+        LinearLayout fields = new LinearLayout(this); fields.setOrientation(LinearLayout.VERTICAL); fields.setPadding(dp(8), dp(2), dp(8), dp(10));
+        TextView intro = body("把此刻的感受，轻轻贴在这段文字边。", 9); intro.setTextColor(Color.parseColor("#9B6E80")); fields.addView(intro);
+        TextView quote = body("“" + diaryClip(quoteText, 120) + "”", 9); quote.setPadding(dp(12), dp(10), dp(12), dp(10)); quote.setTextColor(Color.parseColor("#775E68")); GradientDrawable quoteBg = new GradientDrawable(); quoteBg.setColor(Color.parseColor("#FFFFF8F5")); quoteBg.setCornerRadius(dp(13)); quoteBg.setStroke(dp(1), Color.parseColor("#EBD9D2")); quote.setBackground(quoteBg); fields.addView(quote, matchWrapTop(10));
+        final String[] pickedMood = new String[]{"喜欢这里"};
+        LinearLayout chips = horizontal(); chips.setPadding(0, dp(10), 0, 0); String[] moods = new String[]{"喜欢这里", "抱抱", "记住了", "想回应"}; TextView[] chipViews = new TextView[moods.length];
+        for (int i = 0; i < moods.length; i++) { final String mood = moods[i]; TextView chip = label(mood, 8); chip.setPadding(dp(10), dp(5), dp(10), dp(5)); styleDiaryMoodChip(chip, i == 0); chip.setOnClickListener(v -> { pickedMood[0] = mood; for (int k = 0; k < chipViews.length; k++) styleDiaryMoodChip(chipViews[k], moods[k].equals(pickedMood[0])); }); chipViews[i] = chip; LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); lp.rightMargin = dp(6); chips.addView(chip, lp); }
+        fields.addView(chips);
+        EditText noteInput = new EditText(this); noteInput.setHint("写一张页边纸条……"); noteInput.setGravity(Gravity.TOP); noteInput.setMinLines(4); noteInput.setMaxLines(8); fields.addView(noteInput, matchWrapTop(10));
+        TextView counter = label("0/200", 8); counter.setGravity(Gravity.RIGHT); counter.setTextColor(Color.parseColor("#B08D98")); fields.addView(counter, matchWrapTop(4));
+        noteInput.addTextChangedListener(new TextWatcher() { public void beforeTextChanged(CharSequence s, int start, int count, int after) { } public void onTextChanged(CharSequence s, int start, int before, int count) { counter.setText(Math.min(s.length(), 200) + "/200"); } public void afterTextChanged(Editable e) { if (e.length() > 200) e.delete(200, e.length()); } });
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("留一张页边纸条").setView(fields).setNegativeButton("取消", null).setPositiveButton("保存纸条", null).create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String text = noteInput.getText().toString().trim();
+            if (text.isEmpty()) { Toast.makeText(this, "先写一点想留下的话", Toast.LENGTH_SHORT).show(); return; }
+            JSONObject saved = DiaryState.addAnnotation(this, entry.optString("id", ""), paragraphIndex, quoteText, text, pickedMood[0], "margin_note", "user");
+            if (!saved.optBoolean("ok", false)) { Toast.makeText(this, "保存失败：" + saved.optString("error", "请检查内容"), Toast.LENGTH_LONG).show(); return; }
+            dialog.dismiss(); Toast.makeText(this, "页边纸条已贴好", Toast.LENGTH_SHORT).show(); showDiaryDatePage(entry.optString("date", ""), entry.optString("id", ""));
+        }));
+        dialog.show();
+    }
+
+    private void styleDiaryMoodChip(TextView chip, boolean selected) {
+        if (chip == null) return;
+        chip.setTextColor(selected ? Color.parseColor("#9A5268") : Color.parseColor("#9B7C87"));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(selected ? Color.parseColor("#FFE6EE") : Color.parseColor("#FFFFFBFD")); bg.setCornerRadius(dp(14)); bg.setStroke(dp(1), selected ? Color.parseColor("#E6AFC0") : Color.parseColor("#EADBE0")); chip.setBackground(bg);
+    }
+
+    private void showDiaryAnnotationDetailDialog(JSONObject note) {
+        LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(8), dp(2), dp(8), dp(10));
+        TextView mood = label(note.optString("mood", "页边纸条"), 8); mood.setTextColor(Color.parseColor("#B17286")); box.addView(mood);
+        TextView quote = body("批注原文：\n“" + diaryClip(note.optString("quote_text", ""), 160) + "”", 9); quote.setTextColor(Color.parseColor("#826A73")); box.addView(quote, matchWrapTop(9));
+        TextView text = body(note.optString("annotation_text", ""), 11); text.setTextColor(Color.parseColor("#5E4852")); text.setLineSpacing(dp(5), 1f); box.addView(text, matchWrapTop(10));
+        new AlertDialog.Builder(this).setTitle("页边纸条").setView(box).setNegativeButton("关闭", null).setPositiveButton("删除", (d, w) -> { DiaryState.deleteAnnotation(this, note.optString("id", "")); Toast.makeText(this, "纸条已删除", Toast.LENGTH_SHORT).show(); showDiaryDatePage(diarySelectedDate, diaryCurrentEntryId); }).show();
+    }
+
+    private String diaryClip(String text, int max) { if (text == null) return ""; text = text.trim().replaceAll("\\s+", " "); return text.length() <= max ? text : text.substring(0, max) + "…"; }
 
     private void setDiaryEntryExpanded(TextView content, boolean expanded) {
         content.setMaxLines(expanded ? Integer.MAX_VALUE : 4);
@@ -1722,6 +1851,66 @@ public class MainActivity extends Activity {
         if (intervalInput != null) { intervalInput.addTextChangedListener(watcher); intervalInput.setOnFocusChangeListener(saveOnBlur); }
     }
 
+    private void bindHomeModeAutoSave() {
+        TextWatcher watcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(Editable s) { saveHomeModeSettingsOnly(false); }
+        };
+        View.OnFocusChangeListener saveOnBlur = (v, focused) -> { if (!focused) saveHomeModeSettingsOnly(true); };
+        if (targetAppsInput != null) { targetAppsInput.addTextChangedListener(watcher); targetAppsInput.setOnFocusChangeListener(saveOnBlur); }
+        if (homeThresholdInput != null) { homeThresholdInput.addTextChangedListener(watcher); homeThresholdInput.setOnFocusChangeListener(saveOnBlur); }
+        if (homeCooldownInput != null) { homeCooldownInput.addTextChangedListener(watcher); homeCooldownInput.setOnFocusChangeListener(saveOnBlur); }
+        if (homeTargetInput != null) { homeTargetInput.addTextChangedListener(watcher); homeTargetInput.setOnFocusChangeListener(saveOnBlur); }
+        if (homeModeEnabled != null) homeModeEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> saveHomeModeSettingsOnly(true));
+        if (homeModeForceEnabled != null) homeModeForceEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> saveHomeModeSettingsOnly(true));
+    }
+
+    private void saveHomeModeSettingsOnly(boolean blocking) {
+        SharedPreferences prefs = getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE);
+        boolean enabled = homeModeEnabled != null && homeModeEnabled.isChecked();
+        boolean force = homeModeForceEnabled != null && homeModeForceEnabled.isChecked();
+        String normalizedTargets = targetAppsInput == null ? prefs.getString(AppPrefs.KEY_TARGET_APPS, "") : AppPrefs.normalizeTargetApps(targetAppsInput.getText().toString());
+        String watchPackages = collectPackagesFromTargets(normalizedTargets);
+        int threshold = homeThresholdInput == null ? prefs.getInt(AppPrefs.KEY_HOME_THRESHOLD_MIN, 10) : parseInt(homeThresholdInput.getText().toString().trim(), 10, 1, 240);
+        int cooldown = homeCooldownInput == null ? prefs.getInt(AppPrefs.KEY_HOME_COOLDOWN_MIN, 5) : parseInt(homeCooldownInput.getText().toString().trim(), 5, 1, 240);
+        String homeTarget = homeTargetInput == null ? prefs.getString(AppPrefs.KEY_HOME_TARGET_PACKAGE, "") : AppPrefs.saveHomeTarget(this, homeTargetInput.getText().toString().trim());
+
+        boolean changed = prefs.getBoolean(AppPrefs.KEY_HOME_MODE_ENABLED, false) != enabled
+                || prefs.getBoolean(AppPrefs.KEY_HOME_MODE_FORCE, false) != force
+                || !prefs.getString(AppPrefs.KEY_TARGET_APPS, "").equals(normalizedTargets)
+                || !prefs.getString(AppPrefs.KEY_HOME_WATCH_PACKAGES, "").equals(watchPackages)
+                || prefs.getInt(AppPrefs.KEY_HOME_THRESHOLD_MIN, 10) != threshold
+                || prefs.getInt(AppPrefs.KEY_HOME_COOLDOWN_MIN, 5) != cooldown
+                || !prefs.getString(AppPrefs.KEY_HOME_TARGET_PACKAGE, "").equals(homeTarget);
+
+        SharedPreferences.Editor e = prefs.edit()
+                .putBoolean(AppPrefs.KEY_HOME_MODE_ENABLED, enabled)
+                .putBoolean(AppPrefs.KEY_HOME_MODE_FORCE, force)
+                .putString(AppPrefs.KEY_TARGET_APPS, normalizedTargets)
+                .putString(AppPrefs.KEY_HOME_WATCH_PACKAGES, watchPackages)
+                .putInt(AppPrefs.KEY_HOME_THRESHOLD_MIN, threshold)
+                .putInt(AppPrefs.KEY_HOME_COOLDOWN_MIN, cooldown)
+                .putString(AppPrefs.KEY_HOME_TARGET_PACKAGE, homeTarget);
+        if (blocking) e.commit(); else e.apply();
+        if (changed) HomeMode.resetTracking(this);
+        if (homeModeStatusText != null) homeModeStatusText.setText(HomeMode.pretty(this));
+    }
+
+    private String collectPackagesFromTargets(String normalizedTargets) {
+        StringBuilder packages = new StringBuilder();
+        String source = normalizedTargets == null ? "" : normalizedTargets;
+        for (String line : source.split("\n")) {
+            String[] parts = line.split("\\|", 2);
+            if (parts.length == 2 && AppPrefs.isPackageLike(parts[1].trim())) {
+                if (packages.length() > 0) packages.append(',');
+                packages.append(parts[1].trim());
+            }
+        }
+        String normalized = AppPrefs.normalizePackageCsv(packages.toString());
+        return normalized.isEmpty() ? AppPrefs.DEFAULT_HOME_WATCH_PACKAGES : normalized;
+    }
+
     private void saveConnectionSettingsOnly(boolean blocking) {
         SharedPreferences.Editor e = getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit();
         if (serverUrl != null) e.putString(AppPrefs.KEY_SERVER, serverUrl.getText().toString().trim());
@@ -1764,15 +1953,7 @@ public class MainActivity extends Activity {
         if (targetAppsInput != null) {
             String normalizedTargets = AppPrefs.normalizeTargetApps(targetAppsInput.getText().toString());
             e.putString(AppPrefs.KEY_TARGET_APPS, normalizedTargets);
-            StringBuilder packages = new StringBuilder();
-            for (String line : normalizedTargets.split("\\n")) {
-                String[] parts = line.split("\\|", 2);
-                if (parts.length == 2 && AppPrefs.isPackageLike(parts[1].trim())) {
-                    if (packages.length() > 0) packages.append(',');
-                    packages.append(parts[1].trim());
-                }
-            }
-            e.putString(AppPrefs.KEY_HOME_WATCH_PACKAGES, packages.toString());
+            e.putString(AppPrefs.KEY_HOME_WATCH_PACKAGES, collectPackagesFromTargets(normalizedTargets));
         }
         if (homeThresholdInput != null) e.putInt(AppPrefs.KEY_HOME_THRESHOLD_MIN, parseInt(homeThresholdInput.getText().toString().trim(), 10, 1, 240));
         if (homeCooldownInput != null) e.putInt(AppPrefs.KEY_HOME_COOLDOWN_MIN, parseInt(homeCooldownInput.getText().toString().trim(), 5, 1, 240));
@@ -2344,7 +2525,7 @@ public class MainActivity extends Activity {
         getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", false).apply(); requestIgnoreBatteryOptimization();
         Intent intent = new Intent(this, CompanionService.class); intent.putExtra("server_url", url); intent.putExtra("token", token);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
-        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.8.4 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
+        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.8.8 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
     }
 
     private void stopCompanionService() { getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", true).apply(); stopService(new Intent(this, CompanionService.class)); DebugState.append(this, "已停止服务"); serviceRunning = false; updateUI(); }

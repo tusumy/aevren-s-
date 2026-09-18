@@ -11,8 +11,8 @@ import java.util.Map;
 
 public class AppPrefs {
     public static final String PREFS = "linjian_peek";
-    public static final String APP_VERSION_NAME = "0.3.8.4";
-    public static final int APP_VERSION_CODE = 30804;
+    public static final String APP_VERSION_NAME = "0.3.8.8";
+    public static final int APP_VERSION_CODE = 30808;
     public static final String KEY_SERVER = "server_url";
     public static final String KEY_TOKEN = "token";
     public static final String KEY_DEVICE = "device_id";
@@ -64,6 +64,7 @@ public class AppPrefs {
     public static final String KEY_HOME_COOLDOWN_MIN = "home_mode_cooldown_min";
     public static final String KEY_HOME_TARGET_PACKAGE = "home_mode_target_package";
     public static final String DEFAULT_HOME_TARGET_PACKAGE = "com.openai.chatgpt";
+    public static final String DEFAULT_HOME_WATCH_PACKAGES = "com.ss.android.ugc.aweme,com.xingin.xhs";
 
     public static SharedPreferences get(Context ctx) { return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
 
@@ -147,6 +148,7 @@ public class AppPrefs {
 
     public static LinkedHashMap<String, String> targetApps(Context ctx) {
         LinkedHashMap<String, String> apps = new LinkedHashMap<>();
+        apps.put("ChatGPT", "com.openai.chatgpt");
         String raw = get(ctx).getString(KEY_TARGET_APPS, "");
         for (String line : raw.split("\\n")) {
             String value = line == null ? "" : line.trim();
@@ -174,6 +176,36 @@ public class AppPrefs {
             out.append(app.getKey()).append("|").append(app.getValue()).append("\n");
         }
         return out.toString().trim();
+    }
+
+    public static String homeWatchPackages(Context ctx) {
+        SharedPreferences prefs = get(ctx);
+        String saved = normalizePackageCsv(prefs.getString(KEY_HOME_WATCH_PACKAGES, ""));
+        if (!saved.isEmpty()) return saved;
+        StringBuilder fromTargets = new StringBuilder();
+        for (String pkg : targetApps(ctx).values()) {
+            if (!isPackageLike(pkg)) continue;
+            if (fromTargets.length() > 0) fromTargets.append(',');
+            fromTargets.append(pkg.trim());
+        }
+        String normalized = normalizePackageCsv(fromTargets.toString());
+        return normalized.isEmpty() ? DEFAULT_HOME_WATCH_PACKAGES : normalized;
+    }
+
+    public static String normalizePackageCsv(String raw) {
+        LinkedHashMap<String, String> packages = new LinkedHashMap<>();
+        String source = raw == null ? "" : raw;
+        for (String part : source.split("[,，\n ]+")) {
+            String pkg = part == null ? "" : part.trim();
+            if (!isPackageLike(pkg)) continue;
+            packages.put(pkg, pkg);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String pkg : packages.values()) {
+            if (out.length() > 0) out.append(',');
+            out.append(pkg);
+        }
+        return out.toString();
     }
 
     public static String normalizeTargetApps(String raw) {
@@ -241,7 +273,6 @@ public class AppPrefs {
 
     public static Map<String, String> defaultApps() {
         LinkedHashMap<String, String> apps = new LinkedHashMap<>();
-        apps.put("ChatGPT", "com.openai.chatgpt");
         apps.put("小红书", "com.xingin.xhs");
         apps.put("微信", "com.tencent.mm");
         apps.put("QQ", "com.tencent.mobileqq");
