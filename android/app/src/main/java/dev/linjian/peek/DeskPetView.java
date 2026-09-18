@@ -306,10 +306,41 @@ public class DeskPetView extends View {
         boolean closed = state == STATE_BLINK || state == STATE_SLEEP;
 
         if (closed) {
-            stroke.setStrokeWidth(h * .014f);
-            stroke.setColor(0xFF9FD8B0);
-            c.drawLine(cx - eyeDX - w * .028f, eyeY, cx - eyeDX + w * .028f, eyeY, stroke);
-            c.drawLine(cx + eyeDX - w * .028f, eyeY, cx + eyeDX + w * .028f, eyeY, stroke);
+            // Soft sleepy eyelids: dark, tapered curves instead of bright green flat bars.
+            // The shape follows the reference cat: slightly lowered inner corners,
+            // a gentle dip through the middle, and a tiny lift toward the outer edge.
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(0xFF111215);
+
+            float lidHalf = w * .034f;
+            float lidThick = h * .010f;
+            float lidDip = h * .010f;
+
+            Path leftLid = new Path();
+            leftLid.moveTo(cx - eyeDX - lidHalf, eyeY - h * .002f);
+            leftLid.cubicTo(
+                    cx - eyeDX - w * .010f, eyeY + lidDip,
+                    cx - eyeDX + w * .014f, eyeY + lidDip,
+                    cx - eyeDX + lidHalf, eyeY - h * .005f);
+            leftLid.cubicTo(
+                    cx - eyeDX + w * .012f, eyeY + lidDip + lidThick,
+                    cx - eyeDX - w * .013f, eyeY + lidDip + lidThick,
+                    cx - eyeDX - lidHalf, eyeY - h * .002f);
+            leftLid.close();
+            c.drawPath(leftLid, p);
+
+            Path rightLid = new Path();
+            rightLid.moveTo(cx + eyeDX - lidHalf, eyeY - h * .005f);
+            rightLid.cubicTo(
+                    cx + eyeDX - w * .014f, eyeY + lidDip,
+                    cx + eyeDX + w * .010f, eyeY + lidDip,
+                    cx + eyeDX + lidHalf, eyeY - h * .002f);
+            rightLid.cubicTo(
+                    cx + eyeDX + w * .013f, eyeY + lidDip + lidThick,
+                    cx + eyeDX - w * .012f, eyeY + lidDip + lidThick,
+                    cx + eyeDX - lidHalf, eyeY - h * .005f);
+            rightLid.close();
+            c.drawPath(rightLid, p);
         } else {
             drawEye(c, cx - eyeDX, eyeY, w * .040f, h * .050f);
             drawEye(c, cx + eyeDX, eyeY, w * .040f, h * .050f);
