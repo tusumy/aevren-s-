@@ -107,7 +107,7 @@ public class DeskPetService extends Service {
         bubble.setScaleY(.94f);
         bubble.setVisibility(View.INVISIBLE);
         bubble.setMaxLines(1);
-        bubble.setMaxWidth(dp(126));
+        bubble.setMaxWidth(dp(134));
         bubble.setBackground(bubbleBg);
         if (Build.VERSION.SDK_INT >= 21) bubble.setElevation(dp(5));
 
@@ -115,7 +115,7 @@ public class DeskPetService extends Service {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.END);
-        bubbleLp.topMargin = dp(3);
+        bubbleLp.topMargin = dp(2);
         bubbleLp.rightMargin = dp(3);
         root.addView(bubble, bubbleLp);
 
@@ -127,7 +127,7 @@ public class DeskPetService extends Service {
         if (Build.VERSION.SDK_INT >= 21) bubbleTail.setElevation(dp(4));
         FrameLayout.LayoutParams tailLp = new FrameLayout.LayoutParams(dp(9), dp(9),
                 Gravity.TOP | Gravity.END);
-        tailLp.topMargin = dp(31);
+        tailLp.topMargin = dp(30);
         tailLp.rightMargin = dp(22);
         root.addView(bubbleTail, tailLp);
 
@@ -135,13 +135,13 @@ public class DeskPetService extends Service {
         pet.setBackgroundColor(Color.TRANSPARENT);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
-        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(118), dp(118),
+        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(138), dp(96),
                 Gravity.BOTTOM | Gravity.END);
-        petLp.rightMargin = dp(8);
+        petLp.rightMargin = dp(6);
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        int width = dp(150), height = dp(164);
+        int width = dp(158), height = dp(142);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
@@ -175,8 +175,8 @@ public class DeskPetService extends Service {
 
     private GradientDrawable bubbleDrawable() {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(0xA8EAF7EE);
-        d.setStroke(dp(1), 0xB86EB889);
+        d.setColor(0x72EAF7EE);
+        d.setStroke(dp(1), 0x966EB889);
         d.setCornerRadius(dp(15));
         return d;
     }
