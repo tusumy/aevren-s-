@@ -11,7 +11,7 @@ import android.view.View;
 
 import java.util.Random;
 
-/** Small head-only, front-facing silly black cat desk pet. */
+/** Low-profile front-facing black cat desk pet, lying on a screen edge with paws forward. */
 public class DeskPetView extends View {
     private static final int STATE_IDLE = 0;
     private static final int STATE_BLINK = 1;
@@ -169,114 +169,140 @@ public class DeskPetView extends View {
     }
 
     private void drawAccent(Canvas c, float w, float h) {
-        stroke.setStrokeWidth(h * .011f);
-        stroke.setColor(0xFF8FC8A4);
-        c.drawLine(w * .25f, h * .40f, w * .20f, h * .35f, stroke);
-        c.drawLine(w * .27f, h * .45f, w * .20f, h * .43f, stroke);
-        c.drawLine(w * .75f, h * .40f, w * .80f, h * .35f, stroke);
-        c.drawLine(w * .73f, h * .45f, w * .80f, h * .43f, stroke);
+        stroke.setStrokeWidth(h * .010f);
+        stroke.setColor(0xFF86C99A);
+        c.drawLine(w * .16f, h * .43f, w * .12f, h * .39f, stroke);
+        c.drawLine(w * .17f, h * .48f, w * .11f, h * .47f, stroke);
+        c.drawLine(w * .80f, h * .42f, w * .85f, h * .37f, stroke);
+        c.drawLine(w * .80f, h * .48f, w * .87f, h * .46f, stroke);
     }
 
     private void drawShadow(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0x24000000);
-        c.drawOval(new RectF(w * .26f, h * .86f, w * .74f, h * .94f), p);
+        p.setColor(0x22000000);
+        c.drawOval(new RectF(w * .24f, h * .76f, w * .79f, h * .84f), p);
     }
 
     private void drawTail(Canvas c, float w, float h) {
-        stroke.setStrokeWidth(h * .050f);
-        stroke.setColor(0xFF24272B);
+        stroke.setStrokeWidth(h * .075f);
+        stroke.setColor(0xFF23262A);
         Path tail = new Path();
-        tail.moveTo(w * .64f, h * .69f);
-        tail.cubicTo(w * .78f, h * .70f, w * .82f, h * .63f, w * .77f, h * .59f);
+        tail.moveTo(w * .66f, h * .66f);
+        tail.cubicTo(w * .80f, h * .67f, w * .88f, h * .58f, w * .82f, h * .50f);
+        tail.cubicTo(w * .77f, h * .43f, w * .69f, h * .48f, w * .74f, h * .54f);
         c.drawPath(tail, stroke);
+
+        stroke.setStrokeWidth(h * .020f);
+        stroke.setColor(0xFF34383D);
+        Path hi = new Path();
+        hi.moveTo(w * .69f, h * .63f);
+        hi.cubicTo(w * .78f, h * .62f, w * .82f, h * .56f, w * .78f, h * .51f);
+        c.drawPath(hi, stroke);
     }
 
     private void drawBody(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF262A2E);
+        p.setColor(0xFF25282C);
 
-        // Squat sitting silhouette: short body, wide haunches, no human-like upright torso.
+        // Body stays low and mostly hidden behind the head, like a cat lying on a ledge.
         Path body = new Path();
-        body.moveTo(w * .37f, h * .56f);
-        body.cubicTo(w * .33f, h * .61f, w * .31f, h * .72f, w * .35f, h * .80f);
-        body.cubicTo(w * .39f, h * .86f, w * .61f, h * .86f, w * .65f, h * .80f);
-        body.cubicTo(w * .69f, h * .72f, w * .67f, h * .61f, w * .63f, h * .56f);
+        body.moveTo(w * .30f, h * .55f);
+        body.cubicTo(w * .29f, h * .64f, w * .34f, h * .72f, w * .45f, h * .75f);
+        body.cubicTo(w * .56f, h * .78f, w * .69f, h * .73f, w * .73f, h * .64f);
+        body.cubicTo(w * .74f, h * .58f, w * .68f, h * .53f, w * .60f, h * .52f);
+        body.cubicTo(w * .48f, h * .50f, w * .36f, h * .51f, w * .30f, h * .55f);
         body.close();
         c.drawPath(body, p);
 
-        p.setColor(0xFF34393E);
-        c.drawOval(new RectF(w * .42f, h * .63f, w * .58f, h * .79f), p);
+        p.setColor(0xFF34383D);
+        c.drawOval(new RectF(w * .39f, h * .60f, w * .63f, h * .73f), p);
     }
 
     private void drawPaws(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF2D3136);
+        p.setColor(0xFF2A2D31);
 
-        // Tiny front paws tucked close together like the reference cat.
-        c.drawRoundRect(new RectF(w * .39f, h * .74f, w * .48f, h * .84f),
-                h * .026f, h * .026f, p);
-        c.drawRoundRect(new RectF(w * .52f, h * .74f, w * .61f, h * .84f),
-                h * .026f, h * .026f, p);
+        // Two soft front paws resting on the screen edge.
+        c.drawOval(new RectF(w * .34f, h * .65f, w * .47f, h * .78f), p);
+        c.drawOval(new RectF(w * .50f, h * .65f, w * .63f, h * .78f), p);
 
-        p.setColor(0xFFE5E8E9);
-        c.drawRoundRect(new RectF(w * .40f, h * .80f, w * .47f, h * .85f),
-                h * .016f, h * .016f, p);
-        c.drawRoundRect(new RectF(w * .53f, h * .80f, w * .60f, h * .85f),
-                h * .016f, h * .016f, p);
+        p.setColor(0xFF393D42);
+        c.drawOval(new RectF(w * .365f, h * .70f, w * .445f, h * .765f), p);
+        c.drawOval(new RectF(w * .525f, h * .70f, w * .605f, h * .765f), p);
+
+        stroke.setStrokeWidth(h * .006f);
+        stroke.setColor(0xFF52585D);
+        c.drawLine(w * .385f, h * .735f, w * .385f, h * .762f, stroke);
+        c.drawLine(w * .415f, h * .735f, w * .415f, h * .762f, stroke);
+        c.drawLine(w * .545f, h * .735f, w * .545f, h * .762f, stroke);
+        c.drawLine(w * .575f, h * .735f, w * .575f, h * .762f, stroke);
     }
 
     private void drawHead(Canvas c, float w, float h) {
-        float cx = w * .50f;
-        float cy = h * .36f;
-        float rx = w * .255f;
-        float ry = h * .225f;
-        float twitch = earTwitch * h * .014f;
+        float cx = w * .485f;
+        float cy = h * .43f;
+        float rx = w * .245f;
+        float ry = h * .235f;
+        float twitch = earTwitch * h * .012f;
 
-        Path ears = new Path();
-        ears.moveTo(cx - rx * .84f, cy - ry * .12f);
-        ears.lineTo(cx - rx * .58f, cy - ry * 1.06f - twitch);
-        ears.lineTo(cx - rx * .16f, cy - ry * .58f);
-        ears.lineTo(cx + rx * .16f, cy - ry * .58f);
-        ears.lineTo(cx + rx * .58f, cy - ry * 1.06f + twitch);
-        ears.lineTo(cx + rx * .84f, cy - ry * .12f);
-        ears.close();
+        Path head = new Path();
+        head.moveTo(cx - rx * .88f, cy - ry * .18f);
+        head.lineTo(cx - rx * .66f, cy - ry * 1.02f - twitch);
+        head.lineTo(cx - rx * .28f, cy - ry * .68f);
+        head.cubicTo(cx - rx * .08f, cy - ry * .78f, cx + rx * .08f, cy - ry * .78f, cx + rx * .28f, cy - ry * .68f);
+        head.lineTo(cx + rx * .64f, cy - ry * 1.02f + twitch);
+        head.lineTo(cx + rx * .88f, cy - ry * .18f);
+        head.lineTo(cx + rx * .96f, cy + ry * .18f);
+        head.lineTo(cx + rx * .84f, cy + ry * .32f);
+        head.lineTo(cx + rx * .92f, cy + ry * .40f);
+        head.lineTo(cx + rx * .72f, cy + ry * .46f);
+        head.cubicTo(cx + rx * .45f, cy + ry * .70f, cx - rx * .45f, cy + ry * .70f, cx - rx * .72f, cy + ry * .46f);
+        head.lineTo(cx - rx * .92f, cy + ry * .40f);
+        head.lineTo(cx - rx * .84f, cy + ry * .32f);
+        head.lineTo(cx - rx * .96f, cy + ry * .18f);
+        head.close();
 
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xFF24272B);
-        c.drawPath(ears, p);
+        p.setShadowLayer(h * .014f, 0f, h * .004f, 0x2A000000);
+        c.drawPath(head, p);
+        p.clearShadowLayer();
 
         Path innerL = new Path();
-        innerL.moveTo(cx - rx * .55f, cy - ry * .92f);
-        innerL.lineTo(cx - rx * .44f, cy - ry * .54f);
-        innerL.lineTo(cx - rx * .24f, cy - ry * .66f);
+        innerL.moveTo(cx - rx * .62f, cy - ry * .90f);
+        innerL.lineTo(cx - rx * .49f, cy - ry * .58f);
+        innerL.lineTo(cx - rx * .31f, cy - ry * .69f);
         innerL.close();
-        p.setColor(0xFF654F58);
+        p.setColor(0xFF65545C);
         c.drawPath(innerL, p);
 
         Path innerR = new Path();
-        innerR.moveTo(cx + rx * .55f, cy - ry * .92f);
-        innerR.lineTo(cx + rx * .44f, cy - ry * .54f);
-        innerR.lineTo(cx + rx * .24f, cy - ry * .66f);
+        innerR.moveTo(cx + rx * .60f, cy - ry * .90f);
+        innerR.lineTo(cx + rx * .48f, cy - ry * .58f);
+        innerR.lineTo(cx + rx * .30f, cy - ry * .69f);
         innerR.close();
         c.drawPath(innerR, p);
 
-        p.setColor(0xFF292D31);
-        p.setShadowLayer(h * .015f, 0f, h * .005f, 0x2B000000);
-        c.drawRoundRect(new RectF(cx - rx, cy - ry * .62f, cx + rx, cy + ry * .72f),
-                h * .075f, h * .075f, p);
-        p.clearShadowLayer();
+        // Tiny messy fringe to keep it from looking like a geometric mascot.
+        p.setColor(0xFF1F2226);
+        Path tuft = new Path();
+        tuft.moveTo(cx - w * .050f, cy - ry * .66f);
+        tuft.lineTo(cx - w * .018f, cy - ry * .82f);
+        tuft.lineTo(cx, cy - ry * .69f);
+        tuft.lineTo(cx + w * .020f, cy - ry * .84f);
+        tuft.lineTo(cx + w * .054f, cy - ry * .66f);
+        tuft.close();
+        c.drawPath(tuft, p);
 
-        p.setColor(0xFF393E43);
-        c.drawRoundRect(new RectF(cx - rx * .52f, cy + ry * .05f, cx + rx * .52f, cy + ry * .55f),
-                h * .040f, h * .040f, p);
+        p.setColor(0xFF34383D);
+        c.drawOval(new RectF(cx - rx * .54f, cy + ry * .02f, cx + rx * .54f, cy + ry * .50f), p);
     }
 
     private void drawFace(Canvas c, float w, float h) {
-        float cx = w * .50f;
-        float cy = h * .36f;
-        float eyeY = cy - h * .020f;
-        float eyeDX = w * .082f;
+        float cx = w * .485f;
+        float cy = h * .43f;
+        float eyeY = cy - h * .022f;
+        float eyeDX = w * .083f;
         boolean closed = state == STATE_BLINK || state == STATE_SLEEP;
 
         if (closed) {
@@ -285,8 +311,8 @@ public class DeskPetView extends View {
             c.drawLine(cx - eyeDX - w * .028f, eyeY, cx - eyeDX + w * .028f, eyeY, stroke);
             c.drawLine(cx + eyeDX - w * .028f, eyeY, cx + eyeDX + w * .028f, eyeY, stroke);
         } else {
-            drawEye(c, cx - eyeDX, eyeY, w * .034f, h * .042f);
-            drawEye(c, cx + eyeDX, eyeY, w * .034f, h * .042f);
+            drawEye(c, cx - eyeDX, eyeY, w * .040f, h * .050f);
+            drawEye(c, cx + eyeDX, eyeY, w * .040f, h * .050f);
         }
 
         p.setStyle(Paint.Style.FILL);
@@ -335,22 +361,21 @@ public class DeskPetView extends View {
     }
 
     private void drawYMark(Canvas c, float w, float h) {
-        float cx = w * .50f;
+        float cx = w * .485f;
+        float topY = h * .615f;
+        float splitY = h * .632f;
+        float bottomY = h * .656f;
 
-        // Y sits high on the chest/neck seam, never between the legs.
-        float topY = h * .545f;
-        float splitY = h * .565f;
-        float bottomY = h * .592f;
-
-        stroke.setStrokeWidth(h * .0075f);
-        stroke.setColor(0xFFD9DEE1);
-        c.drawLine(cx - w * .022f, topY, cx, splitY, stroke);
-        c.drawLine(cx + w * .022f, topY, cx, splitY, stroke);
+        // Y is the neck detail itself, not a hanging tag.
+        stroke.setStrokeWidth(h * .006f);
+        stroke.setColor(0xFFD5DADD);
+        c.drawLine(cx - w * .017f, topY, cx, splitY, stroke);
+        c.drawLine(cx + w * .017f, topY, cx, splitY, stroke);
         c.drawLine(cx, splitY, cx, bottomY, stroke);
 
-        stroke.setStrokeWidth(h * .003f);
+        stroke.setStrokeWidth(h * .0025f);
         stroke.setColor(0xFF79C18E);
-        c.drawLine(cx - w * .010f, splitY + h * .008f, cx, splitY + h * .017f, stroke);
-        c.drawLine(cx + w * .010f, splitY + h * .008f, cx, splitY + h * .017f, stroke);
+        c.drawLine(cx - w * .008f, splitY + h * .006f, cx, splitY + h * .014f, stroke);
+        c.drawLine(cx + w * .008f, splitY + h * .006f, cx, splitY + h * .014f, stroke);
     }
 }
