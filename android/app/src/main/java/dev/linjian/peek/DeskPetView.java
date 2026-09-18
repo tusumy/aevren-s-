@@ -184,44 +184,53 @@ public class DeskPetView extends View {
     }
 
     private void drawTail(Canvas c, float w, float h) {
-        stroke.setStrokeWidth(h * .062f);
+        stroke.setStrokeWidth(h * .050f);
         stroke.setColor(0xFF24272B);
         Path tail = new Path();
-        tail.moveTo(w * .66f, h * .74f);
-        tail.cubicTo(w * .84f, h * .72f, w * .87f, h * .61f, w * .80f, h * .57f);
+        tail.moveTo(w * .64f, h * .69f);
+        tail.cubicTo(w * .78f, h * .70f, w * .82f, h * .63f, w * .77f, h * .59f);
         c.drawPath(tail, stroke);
     }
 
     private void drawBody(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xFF262A2E);
-        c.drawRoundRect(new RectF(w * .35f, h * .50f, w * .65f, h * .84f),
-                h * .060f, h * .060f, p);
+
+        // Squat sitting silhouette: short body, wide haunches, no human-like upright torso.
+        Path body = new Path();
+        body.moveTo(w * .37f, h * .56f);
+        body.cubicTo(w * .33f, h * .61f, w * .31f, h * .72f, w * .35f, h * .80f);
+        body.cubicTo(w * .39f, h * .86f, w * .61f, h * .86f, w * .65f, h * .80f);
+        body.cubicTo(w * .69f, h * .72f, w * .67f, h * .61f, w * .63f, h * .56f);
+        body.close();
+        c.drawPath(body, p);
+
         p.setColor(0xFF34393E);
-        c.drawRoundRect(new RectF(w * .41f, h * .58f, w * .59f, h * .78f),
-                h * .040f, h * .040f, p);
+        c.drawOval(new RectF(w * .42f, h * .63f, w * .58f, h * .79f), p);
     }
 
     private void drawPaws(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xFF2D3136);
-        c.drawRoundRect(new RectF(w * .32f, h * .73f, w * .46f, h * .87f),
-                h * .032f, h * .032f, p);
-        c.drawRoundRect(new RectF(w * .54f, h * .73f, w * .68f, h * .87f),
-                h * .032f, h * .032f, p);
+
+        // Tiny front paws tucked close together like the reference cat.
+        c.drawRoundRect(new RectF(w * .39f, h * .74f, w * .48f, h * .84f),
+                h * .026f, h * .026f, p);
+        c.drawRoundRect(new RectF(w * .52f, h * .74f, w * .61f, h * .84f),
+                h * .026f, h * .026f, p);
 
         p.setColor(0xFFE5E8E9);
-        c.drawRoundRect(new RectF(w * .34f, h * .82f, w * .45f, h * .89f),
-                h * .020f, h * .020f, p);
-        c.drawRoundRect(new RectF(w * .55f, h * .82f, w * .66f, h * .89f),
-                h * .020f, h * .020f, p);
+        c.drawRoundRect(new RectF(w * .40f, h * .80f, w * .47f, h * .85f),
+                h * .016f, h * .016f, p);
+        c.drawRoundRect(new RectF(w * .53f, h * .80f, w * .60f, h * .85f),
+                h * .016f, h * .016f, p);
     }
 
     private void drawHead(Canvas c, float w, float h) {
         float cx = w * .50f;
-        float cy = h * .39f;
-        float rx = w * .225f;
-        float ry = h * .205f;
+        float cy = h * .36f;
+        float rx = w * .255f;
+        float ry = h * .225f;
         float twitch = earTwitch * h * .014f;
 
         Path ears = new Path();
@@ -255,7 +264,7 @@ public class DeskPetView extends View {
         p.setColor(0xFF292D31);
         p.setShadowLayer(h * .015f, 0f, h * .005f, 0x2B000000);
         c.drawRoundRect(new RectF(cx - rx, cy - ry * .62f, cx + rx, cy + ry * .72f),
-                h * .060f, h * .060f, p);
+                h * .075f, h * .075f, p);
         p.clearShadowLayer();
 
         p.setColor(0xFF393E43);
@@ -265,9 +274,9 @@ public class DeskPetView extends View {
 
     private void drawFace(Canvas c, float w, float h) {
         float cx = w * .50f;
-        float cy = h * .39f;
-        float eyeY = cy - h * .024f;
-        float eyeDX = w * .078f;
+        float cy = h * .36f;
+        float eyeY = cy - h * .020f;
+        float eyeDX = w * .082f;
         boolean closed = state == STATE_BLINK || state == STATE_SLEEP;
 
         if (closed) {
@@ -327,19 +336,21 @@ public class DeskPetView extends View {
 
     private void drawYMark(Canvas c, float w, float h) {
         float cx = w * .50f;
-        float topY = h * .806f;
-        float splitY = h * .830f;
-        float bottomY = h * .868f;
 
-        stroke.setStrokeWidth(h * .009f);
+        // Y sits high on the chest/neck seam, never between the legs.
+        float topY = h * .545f;
+        float splitY = h * .565f;
+        float bottomY = h * .592f;
+
+        stroke.setStrokeWidth(h * .0075f);
         stroke.setColor(0xFFD9DEE1);
-        c.drawLine(cx - w * .032f, topY, cx, splitY, stroke);
-        c.drawLine(cx + w * .032f, topY, cx, splitY, stroke);
+        c.drawLine(cx - w * .022f, topY, cx, splitY, stroke);
+        c.drawLine(cx + w * .022f, topY, cx, splitY, stroke);
         c.drawLine(cx, splitY, cx, bottomY, stroke);
 
-        stroke.setStrokeWidth(h * .0035f);
+        stroke.setStrokeWidth(h * .003f);
         stroke.setColor(0xFF79C18E);
-        c.drawLine(cx - w * .014f, splitY + h * .012f, cx, splitY + h * .026f, stroke);
-        c.drawLine(cx + w * .014f, splitY + h * .012f, cx, splitY + h * .026f, stroke);
+        c.drawLine(cx - w * .010f, splitY + h * .008f, cx, splitY + h * .017f, stroke);
+        c.drawLine(cx + w * .010f, splitY + h * .008f, cx, splitY + h * .017f, stroke);
     }
 }
