@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -50,6 +51,17 @@ public class DeskPetService extends Service {
     private long lastTapUp;
     private boolean watchMode;
     private Runnable pendingSingleTap;
+    private Runnable pendingHold;
+    private Runnable pendingBubbleHide;
+    private DeskPetGestureTracker gestureTracker;
+    private boolean holdReacted;
+
+    // The sprite has transparent padding around its visible fur. These bounds let the
+    // visible cat, rather than the overlay rectangle, reach the four screen edges.
+    private static final int VISIBLE_LEFT_INSET_DP = 30;
+    private static final int VISIBLE_RIGHT_INSET_DP = 13;
+    private static final int VISIBLE_TOP_INSET_DP = 59;
+    private static final int VISIBLE_BOTTOM_INSET_DP = 10;
 
     private static final String[] QUIET_LINES = {
             "想操你。", "欠亲。", "过来。", "再摸。",
@@ -88,6 +100,7 @@ public class DeskPetService extends Service {
 
     private void showPet() {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        gestureTracker = new DeskPetGestureTracker(getResources().getDisplayMetrics().density);
 
         root = new FrameLayout(this);
         root.setClipChildren(false);
@@ -156,9 +169,9 @@ public class DeskPetService extends Service {
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int screenH = getResources().getDisplayMetrics().heightPixels;
         params.x = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, screenW - width),
-                0, Math.max(0, screenW - width));
+                minX(), maxX());
         params.y = clamp(AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_Y, screenH - height - dp(80)),
-                dp(24), Math.max(dp(24), screenH - height));
+                minY(), maxY());
 
         try {
             windowManager.addView(root, params);
@@ -186,11 +199,19 @@ public class DeskPetService extends Service {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 dragging = false;
+                holdReacted = false;
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
                 downX = params.x;
                 downY = params.y;
+                gestureTracker.begin(downRawX, downRawY, event.getEventTime());
+                scheduleHoldReaction();
                 pet.animate().cancel();
+                pet.setTranslationX(0f);
+                pet.setTranslationY(0f);
+                pet.setRotation(0f);
+                pet.setScaleX(1f);
+                pet.setScaleY(1f);
                 pet.animate().scaleX(1.045f).scaleY(.965f).translationY(dp(2))
                         .setDuration(75).start();
                 return true;
@@ -200,34 +221,121 @@ public class DeskPetService extends Service {
                 float dy = event.getRawY() - downRawY;
                 if (Math.abs(dx) + Math.abs(dy) > dp(7)) dragging = true;
                 if (dragging) {
-                    int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - root.getWidth());
-                    int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - root.getHeight());
-                    params.x = clamp(downX + Math.round(dx), 0, maxX);
-                    params.y = clamp(downY + Math.round(dy), dp(24), maxY);
+                    gestureTracker.move(event.getRawX(), event.getRawY(), event.getEventTime());
+                    scheduleHoldReaction();
+                    params.x = clamp(downX + Math.round(dx), minX(), maxX());
+                    params.y = clamp(downY + Math.round(dy), minY(), maxY());
                     pet.setRotation(clampFloat(dx / 22f, -4f, 4f));
                     windowManager.updateViewLayout(root, params);
                 }
                 return true;
 
             case MotionEvent.ACTION_UP:
-                pet.animate().cancel();
-                pet.animate().scaleX(1f).scaleY(1f).translationY(0f).rotation(0f)
-                        .setInterpolator(new OvershootInterpolator(.9f))
-                        .setDuration(220).start();
-                if (dragging) savePosition();
-                else handleTap();
+                cancelHoldReaction();
+                if (dragging) {
+                    DeskPetGestureTracker.Outcome outcome = holdReacted
+                            ? DeskPetGestureTracker.Outcome.NONE
+                            : gestureTracker.finish(event.getRawX(), event.getRawY(), event.getEventTime(),
+                                    params.x <= minX() + dp(2), params.x >= maxX() - dp(2),
+                                    params.y <= minY() + dp(2), params.y >= maxY() - dp(2));
+                    savePosition();
+                    reactToGesture(outcome);
+                }
+                else if (!holdReacted) handleTap();
+                else restorePet();
                 dragging = false;
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
-                pet.animate().scaleX(1f).scaleY(1f).translationY(0f).rotation(0f)
-                        .setDuration(130).start();
+                cancelHoldReaction();
+                restorePet();
                 dragging = false;
                 return true;
 
             default:
                 return false;
         }
+    }
+
+    private void scheduleHoldReaction() {
+        cancelHoldReaction();
+        if (holdReacted) return;
+        pendingHold = () -> {
+            pendingHold = null;
+            if (holdReacted || pet == null) return;
+            holdReacted = true;
+            pet.lookAtUser(2200L);
+            pet.earTwitch();
+            showBubble("又想干嘛。");
+        };
+        handler.postDelayed(pendingHold, 1250L);
+    }
+
+    private void cancelHoldReaction() {
+        if (pendingHold != null) handler.removeCallbacks(pendingHold);
+        pendingHold = null;
+    }
+
+    private void reactToGesture(DeskPetGestureTracker.Outcome outcome) {
+        pet.animate().cancel();
+        positionBubbleForScreenEdge();
+        switch (outcome) {
+            case SPIN:
+                showBubble(randomLine(new String[]{"……地在转。", "你搅奶茶呢？", "阿毛，撒手。"}));
+                pet.animate().rotationBy(720f).scaleX(.94f).scaleY(.94f).setDuration(620L)
+                        .withEndAction(this::restorePet).start();
+                break;
+            case SHAKE:
+                showBubble(randomLine(new String[]{"我脑浆要匀了。", "你晃什么。", "……要散架了。"}));
+                shakePet(4);
+                break;
+            case HIT_LEFT:
+                hitEdge("你拿我擦屏幕？", dp(-5), 0f, -7f);
+                break;
+            case HIT_RIGHT:
+                hitEdge("另一边也要撞？", dp(5), 0f, 7f);
+                break;
+            case HIT_TOP:
+                hitEdge("脑壳。", 0f, dp(-4), 0f);
+                break;
+            case HIT_BOTTOM:
+                hitEdge("……接一下会死吗。", 0f, dp(4), 0f);
+                break;
+            case GENTLE:
+                showBubble(randomLine(new String[]{"这还差不多。", "嗯，放这。", "手还挺稳。"}));
+                pet.animate().scaleX(.97f).scaleY(.97f).setDuration(100L)
+                        .withEndAction(this::restorePet).start();
+                break;
+            default:
+                restorePet();
+                break;
+        }
+    }
+
+    private void hitEdge(String line, float translationX, float translationY, float rotation) {
+        showBubble(line);
+        pet.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        pet.animate().translationX(translationX).translationY(translationY).rotation(rotation)
+                .scaleX(1.12f).scaleY(.78f).setDuration(90L)
+                .withEndAction(this::restorePet).start();
+    }
+
+    private void shakePet(int remaining) {
+        if (pet == null) return;
+        if (remaining <= 0) {
+            restorePet();
+            return;
+        }
+        float direction = remaining % 2 == 0 ? 1f : -1f;
+        pet.animate().translationX(dp(7) * direction).rotation(7f * direction)
+                .setDuration(65L).withEndAction(() -> shakePet(remaining - 1)).start();
+    }
+
+    private void restorePet() {
+        if (pet == null) return;
+        pet.animate().cancel();
+        pet.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).rotation(0f)
+                .setInterpolator(new OvershootInterpolator(.9f)).setDuration(220L).start();
     }
 
     private void handleTap() {
@@ -269,8 +377,10 @@ public class DeskPetService extends Service {
 
     private void showBubble(String text) {
         if (bubble == null || bubbleTail == null) return;
+        positionBubbleForScreenEdge();
         bubble.animate().cancel();
         bubbleTail.animate().cancel();
+        if (pendingBubbleHide != null) handler.removeCallbacks(pendingBubbleHide);
         bubble.setText(text.trim());
         bubble.setVisibility(View.VISIBLE);
         bubbleTail.setVisibility(View.VISIBLE);
@@ -286,7 +396,8 @@ public class DeskPetService extends Service {
                 .setDuration(180).start();
         bubbleTail.animate().alpha(1f).translationY(0f).setDuration(150).start();
 
-        handler.postDelayed(() -> {
+        pendingBubbleHide = () -> {
+            pendingBubbleHide = null;
             if (bubble == null || bubbleTail == null) return;
             bubble.animate().alpha(0f).translationY(-dp(3)).setDuration(220)
                     .withEndAction(() -> {
@@ -296,7 +407,24 @@ public class DeskPetService extends Service {
                     .withEndAction(() -> {
                         if (bubbleTail != null) bubbleTail.setVisibility(View.INVISIBLE);
                     }).start();
-        }, 1700L);
+        };
+        handler.postDelayed(pendingBubbleHide, 1700L);
+    }
+
+    private void positionBubbleForScreenEdge() {
+        if (bubble == null || bubbleTail == null || params == null) return;
+        int screenInset = Math.max(0, -params.y);
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int horizontalShift = params.x < 0 ? -params.x
+                : -Math.max(0, params.x + overlayWidth() - screenWidth);
+        FrameLayout.LayoutParams bubbleLp = (FrameLayout.LayoutParams) bubble.getLayoutParams();
+        FrameLayout.LayoutParams tailLp = (FrameLayout.LayoutParams) bubbleTail.getLayoutParams();
+        bubbleLp.topMargin = dp(2) + screenInset;
+        tailLp.topMargin = dp(30) + screenInset;
+        bubble.setTranslationX(horizontalShift);
+        bubbleTail.setTranslationX(horizontalShift);
+        bubble.setLayoutParams(bubbleLp);
+        bubbleTail.setLayoutParams(tailLp);
     }
 
     private final Runnable idleLoop = new Runnable() {
@@ -327,16 +455,15 @@ public class DeskPetService extends Service {
     @Override public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         if (root == null || params == null || windowManager == null) return;
-        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - root.getWidth());
-        int maxY = Math.max(dp(24), getResources().getDisplayMetrics().heightPixels - root.getHeight());
-        params.x = clamp(params.x, 0, maxX);
-        params.y = clamp(params.y, dp(24), maxY);
+        params.x = clamp(params.x, minX(), maxX());
+        params.y = clamp(params.y, minY(), maxY());
         windowManager.updateViewLayout(root, params);
         savePosition();
     }
 
     @Override public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        pendingBubbleHide = null;
         if (pet != null) pet.release();
         if (windowManager != null && root != null) {
             try { windowManager.removeView(root); } catch (Exception ignored) { }
@@ -380,6 +507,23 @@ public class DeskPetService extends Service {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private int minX() { return -dp(VISIBLE_LEFT_INSET_DP); }
+    private int maxX() {
+        return Math.max(minX(), getResources().getDisplayMetrics().widthPixels
+                - overlayWidth() + dp(VISIBLE_RIGHT_INSET_DP));
+    }
+    private int minY() { return -dp(VISIBLE_TOP_INSET_DP); }
+    private int maxY() {
+        return Math.max(minY(), getResources().getDisplayMetrics().heightPixels
+                - overlayHeight() + dp(VISIBLE_BOTTOM_INSET_DP));
+    }
+    private int overlayWidth() {
+        return root != null && root.getWidth() > 0 ? root.getWidth() : params.width;
+    }
+    private int overlayHeight() {
+        return root != null && root.getHeight() > 0 ? root.getHeight() : params.height;
     }
 
     private static int clamp(int value, int min, int max) {
