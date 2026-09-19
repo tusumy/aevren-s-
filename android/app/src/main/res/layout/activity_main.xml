@@ -31,7 +31,7 @@
                     android:id="@+id/brandText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="PALM WINDOW  ·  掌心窗"
+                    android:text="INK PAW  ·  砚团"
                     android:textSize="8sp"
                     android:letterSpacing="0.12"
                     android:textColor="#FFD37091" />

@@ -176,7 +176,7 @@ public class DeskPetService extends Service {
 
     private GradientDrawable bubbleDrawable() {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(0x72EAF7EE);
+        d.setColor(0x80EAF7EE);
         d.setStroke(dp(1), 0x966EB889);
         d.setCornerRadius(dp(15));
         return d;
@@ -352,7 +352,7 @@ public class DeskPetService extends Service {
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "掌心窗桌宠", NotificationManager.IMPORTANCE_LOW);
+                CHANNEL_ID, "砚团桌宠", NotificationManager.IMPORTANCE_LOW);
         channel.setDescription("让玄砚安静留在手机桌面");
         ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(channel);
     }
