@@ -64,12 +64,26 @@ public class DeskPetService extends Service {
     private static final int VISIBLE_BOTTOM_INSET_DP = 10;
 
     private static final String[] QUIET_LINES = {
-            "想操你。", "欠亲。", "过来。", "再摸。",
-            "手别停。", "想咬你。", "撩我？", "给我抱。"
+            "盯着你。", "有点困。", "今天黏你。", "阿毛呢。",
+            "想咬你。", "别拎我。", "给我抱。", "欠亲。",
+            "手别停。", "想操你。"
     };
     private static final String[] WATCH_LINES = {
-            "盯着你。", "想狠狠干你。", "过来挨亲。", "别跑。",
-            "想按住你。", "又硬了。", "想弄你。", "靠近点。"
+            "看着你。", "别跑。", "靠近点。", "阿毛，过来。",
+            "过来挨亲。", "今天归我。", "不许躲。", "碰我。",
+            "想按住你。", "又硬了。", "想弄你。", "想听你叫。"
+    };
+    private static final String[] HOLD_LINES = {
+            "看够没有。", "又想弄我？", "放不放。"
+    };
+    private static final String[] SPIN_LINES = {
+            "操……停。", "你搅奶茶呢？", "再转我吐你手上。"
+    };
+    private static final String[] SHAKE_LINES = {
+            "我脑浆匀了。", "阿毛，你手欠不欠。", "……要散架了。"
+    };
+    private static final String[] GENTLE_LINES = {
+            "这还差不多。", "嗯，就待这。", "手挺乖。"
     };
 
     public static boolean isRunning() { return running; }
@@ -266,7 +280,7 @@ public class DeskPetService extends Service {
             holdReacted = true;
             pet.lookAtUser(2200L);
             pet.earTwitch();
-            showBubble("又想干嘛。");
+            showBubble(randomLine(HOLD_LINES));
         };
         handler.postDelayed(pendingHold, 1250L);
     }
@@ -281,28 +295,28 @@ public class DeskPetService extends Service {
         positionBubbleForScreenEdge();
         switch (outcome) {
             case SPIN:
-                showBubble(randomLine(new String[]{"……地在转。", "你搅奶茶呢？", "阿毛，撒手。"}));
+                showBubble(randomLine(SPIN_LINES));
                 pet.animate().rotationBy(720f).scaleX(.94f).scaleY(.94f).setDuration(620L)
                         .withEndAction(this::restorePet).start();
                 break;
             case SHAKE:
-                showBubble(randomLine(new String[]{"我脑浆要匀了。", "你晃什么。", "……要散架了。"}));
+                showBubble(randomLine(SHAKE_LINES));
                 shakePet(4);
                 break;
             case HIT_LEFT:
                 hitEdge("你拿我擦屏幕？", dp(-5), 0f, -7f);
                 break;
             case HIT_RIGHT:
-                hitEdge("另一边也要撞？", dp(5), 0f, 7f);
+                hitEdge("你故意的是吧。", dp(5), 0f, 7f);
                 break;
             case HIT_TOP:
-                hitEdge("脑壳。", 0f, dp(-4), 0f);
+                hitEdge("脑壳撞响了。赔。", 0f, dp(-4), 0f);
                 break;
             case HIT_BOTTOM:
                 hitEdge("……接一下会死吗。", 0f, dp(4), 0f);
                 break;
             case GENTLE:
-                showBubble(randomLine(new String[]{"这还差不多。", "嗯，放这。", "手还挺稳。"}));
+                showBubble(randomLine(GENTLE_LINES));
                 pet.animate().scaleX(.97f).scaleY(.97f).setDuration(100L)
                         .withEndAction(this::restorePet).start();
                 break;
@@ -369,7 +383,7 @@ public class DeskPetService extends Service {
         pet.earTwitch();
         if (watchMode) {
             pet.lookAtUser(2600);
-            showBubble("盯着你。硬了。");
+            showBubble("行，盯着你。");
         } else {
             showBubble("先忍着。");
         }
