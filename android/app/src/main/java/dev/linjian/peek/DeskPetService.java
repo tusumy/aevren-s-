@@ -135,13 +135,13 @@ public class DeskPetService extends Service {
         pet.setBackgroundColor(Color.TRANSPARENT);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
-        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(138), dp(96),
+        FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(138), dp(92),
                 Gravity.BOTTOM | Gravity.END);
-        petLp.rightMargin = dp(6);
+        petLp.rightMargin = dp(8);
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        int width = dp(158), height = dp(142);
+        int width = dp(150), height = dp(132);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
@@ -165,6 +165,7 @@ public class DeskPetService extends Service {
         } catch (RuntimeException error) {
             AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false).apply();
             Toast.makeText(this, "玄砚没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
+            if (pet != null) pet.release();
             root = null;
             pet = null;
             bubble = null;
