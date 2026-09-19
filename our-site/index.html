@@ -81,7 +81,7 @@ footer{text-align:center;color:#87a395;padding-top:40px;font-size:12px}
 <button id="clearStickers" type="button" style="padding:10px 14px;border-radius:999px;background:#fff;border:1px solid #d9e6df;color:#7b9588;font-size:13px">清空我加的</button>
 </div>
 <div id="userStickers" class="stickers" style="margin-top:14px"></div>
-<p class="muted">你选的贴纸会保存在这个浏览器里；刷新还在。换设备不会自动同步。</p>
+<p class="muted">你选的贴纸会保存在这个浏览器里；刷新还在。现在改用更大的本地存储，不再卡在两张。换设备不会自动同步。</p>
 </article>
 </section>
 
@@ -114,35 +114,96 @@ footer{text-align:center;color:#87a395;padding-top:40px;font-size:12px}
 const input=document.getElementById('stickerInput');
 const box=document.getElementById('userStickers');
 const clearBtn=document.getElementById('clearStickers');
-const KEY='amao-aevren-user-stickers';
-function load(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}}
-function save(items){localStorage.setItem(KEY,JSON.stringify(items))}
-function render(){
-  const items=load();
+
+const DB_NAME='amao-aevren-db';
+const STORE='stickers';
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id',autoIncrement:true})};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function getAll(){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readonly');
+    const req=tx.objectStore(STORE).getAll();
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function addSticker(blob,name){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).add({blob,name,createdAt:Date.now()});
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+  });
+}
+async function deleteSticker(id){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+  });
+}
+async function clearAll(){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).clear();
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+  });
+}
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const max=720;
+      const scale=Math.min(1,max/Math.max(img.width,img.height));
+      const w=Math.max(1,Math.round(img.width*scale));
+      const h=Math.max(1,Math.round(img.height*scale));
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      canvas.toBlob(blob=>{
+        URL.revokeObjectURL(url);
+        blob?resolve(blob):reject(new Error('compress failed'));
+      },'image/webp',0.84);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('image load failed'))};
+    img.src=url;
+  });
+}
+async function render(){
+  const items=await getAll();
   box.innerHTML='';
-  items.forEach((src,i)=>{
+  items.sort((a,b)=>a.createdAt-b.createdAt).forEach(item=>{
+    const src=URL.createObjectURL(item.blob);
     const wrap=document.createElement('div');
     wrap.className='sticker-wrap';
-    wrap.innerHTML='<div class="sticker" style="overflow:hidden;position:relative"><img alt="自定义贴纸" style="width:100%;height:100%;object-fit:contain;padding:8px" src="'+src+'"><button data-i="'+i+'" style="position:absolute;right:6px;top:6px;border:0;border-radius:999px;background:#ffffffdd;width:26px;height:26px;cursor:pointer">×</button></div><small>我的贴纸</small>';
+    wrap.innerHTML='<div class="sticker" style="overflow:hidden;position:relative"><img alt="自定义贴纸" style="width:100%;height:100%;object-fit:contain;padding:8px" src="'+src+'"><button data-id="'+item.id+'" style="position:absolute;right:6px;top:6px;border:0;border-radius:999px;background:#ffffffdd;width:26px;height:26px;cursor:pointer">×</button></div><small>我的贴纸</small>';
     box.appendChild(wrap);
   });
-  box.querySelectorAll('button[data-i]').forEach(btn=>btn.onclick=()=>{const a=load();a.splice(Number(btn.dataset.i),1);save(a);render()});
+  box.querySelectorAll('button[data-id]').forEach(btn=>btn.onclick=async()=>{await deleteSticker(Number(btn.dataset.id));render()});
 }
-input.addEventListener('change',()=>{
-  const files=[...input.files].slice(0,12);
-  const items=load();
-  files.forEach(file=>{
-    const r=new FileReader();
-    r.onload=()=>{
-      items.push(r.result);
-      if(items.length>24) items.splice(0,items.length-24);
-      save(items);render();
-    };
-    r.readAsDataURL(file);
-  });
+input.addEventListener('change',async()=>{
+  const files=[...input.files];
+  for(const file of files){
+    try{
+      const blob=await compressImage(file);
+      await addSticker(blob,file.name||'sticker');
+    }catch(e){}
+  }
   input.value='';
+  render();
 });
-clearBtn.addEventListener('click',()=>{localStorage.removeItem(KEY);render()});
+clearBtn.addEventListener('click',async()=>{await clearAll();render()});
 render();
 </script>
 </body>
