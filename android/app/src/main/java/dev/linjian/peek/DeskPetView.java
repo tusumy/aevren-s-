@@ -7,6 +7,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Handler;
 import android.view.View;
@@ -22,7 +23,6 @@ public class DeskPetView extends View {
     private static final int STATE_HAPPY = 4;
 
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final Paint lidPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Handler handler = new Handler();
     private final Random random = new Random();
@@ -45,8 +45,6 @@ public class DeskPetView extends View {
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setStrokeJoin(Paint.Join.ROUND);
-        lidPaint.setStyle(Paint.Style.FILL);
-        lidPaint.setColor(0xFF29262E);
         handler.post(blinkLoop);
         handler.post(breatheLoop);
         handler.post(ambientLoop);
@@ -179,7 +177,7 @@ public class DeskPetView extends View {
         float top = (h - drawH) * .5f;
         destination.set(left, top, left + drawW, top + drawH);
         canvas.drawBitmap(cat, null, destination, imagePaint);
-        if (state == STATE_BLINK || state == STATE_SLEEP) drawClosedEyes(canvas, w, h);
+        if (state == STATE_BLINK || state == STATE_SLEEP) drawClosedEyes(canvas, destination);
         canvas.restore();
     }
 
@@ -193,26 +191,42 @@ public class DeskPetView extends View {
         canvas.drawLine(w * .905f, h * .54f, w * .965f, h * .54f, stroke);
     }
 
-    private void drawClosedEyes(Canvas canvas, float w, float h) {
-        drawLid(canvas, w * .345f, h * .68f, w, h);
-        drawLid(canvas, w * .545f, h * .68f, w, h);
+    private void drawClosedEyes(Canvas canvas, RectF catBounds) {
+        drawLid(canvas, catBounds, .362f, .694f);
+        drawLid(canvas, catBounds, .542f, .694f);
     }
 
-    private void drawLid(Canvas canvas, float cx, float cy, float w, float h) {
+    private void drawLid(Canvas canvas, RectF catBounds, float normalizedX, float normalizedY) {
+        float w = catBounds.width();
+        float h = catBounds.height();
+        float cx = catBounds.left + w * normalizedX;
+        float cy = catBounds.top + h * normalizedY;
+        float halfWidth = w * .052f;
+        float halfHeight = h * .058f;
         Path cover = new Path();
-        cover.moveTo(cx - w * .056f, cy - h * .030f);
-        cover.cubicTo(cx - w * .025f, cy - h * .060f, cx + w * .025f, cy - h * .060f,
-                cx + w * .056f, cy - h * .030f);
-        cover.lineTo(cx + w * .055f, cy + h * .045f);
-        cover.cubicTo(cx + w * .020f, cy + h * .065f, cx - w * .020f, cy + h * .065f,
-                cx - w * .055f, cy + h * .045f);
+        cover.moveTo(cx - halfWidth, cy);
+        cover.cubicTo(cx - w * .030f, cy - halfHeight, cx + w * .030f, cy - halfHeight,
+                cx + halfWidth, cy);
+        cover.cubicTo(cx + w * .030f, cy + halfHeight, cx - w * .030f, cy + halfHeight,
+                cx - halfWidth, cy);
         cover.close();
-        canvas.drawPath(cover, lidPaint);
 
-        stroke.setStrokeWidth(h * .018f);
+        Rect source = new Rect(
+                Math.round(cat.getWidth() * (normalizedX - .052f)),
+                Math.round(cat.getHeight() * .510f),
+                Math.round(cat.getWidth() * (normalizedX + .052f)),
+                Math.round(cat.getHeight() * .626f));
+        RectF patchBounds = new RectF(cx - halfWidth, cy - halfHeight,
+                cx + halfWidth, cy + halfHeight);
+        canvas.save();
+        canvas.clipPath(cover);
+        canvas.drawBitmap(cat, source, patchBounds, imagePaint);
+        canvas.restore();
+
+        stroke.setStrokeWidth(h * .013f);
         stroke.setColor(0xFF17151B);
-        RectF arc = new RectF(cx - w * .050f, cy - h * .004f,
-                cx + w * .050f, cy + h * .060f);
-        canvas.drawArc(arc, 200f, 140f, false, stroke);
+        RectF arc = new RectF(cx - w * .043f, cy - h * .018f,
+                cx + w * .043f, cy + h * .032f);
+        canvas.drawArc(arc, 192f, 156f, false, stroke);
     }
 }
