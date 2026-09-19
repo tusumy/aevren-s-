@@ -6,8 +6,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Handler;
 import android.view.View;
@@ -27,6 +25,7 @@ public class DeskPetView extends View {
     private final Handler handler = new Handler();
     private final Random random = new Random();
     private final Bitmap cat;
+    private final Bitmap closedCat;
     private final RectF destination = new RectF();
 
     private int state = STATE_IDLE;
@@ -40,6 +39,8 @@ public class DeskPetView extends View {
     public DeskPetView(Context context) {
         super(context);
         cat = BitmapFactory.decodeResource(getResources(), R.drawable.pet_xuanyan_fluffy);
+        closedCat = BitmapFactory.decodeResource(
+                getResources(), R.drawable.pet_xuanyan_fluffy_closed);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         stroke.setStyle(Paint.Style.STROKE);
@@ -166,7 +167,9 @@ public class DeskPetView extends View {
         drawAttentionMarks(canvas, w, h);
         float availableW = w * .97f;
         float availableH = h * .945f;
-        float imageAspect = (float) cat.getWidth() / cat.getHeight();
+        Bitmap frame = (state == STATE_BLINK || state == STATE_SLEEP)
+                && closedCat != null && !closedCat.isRecycled() ? closedCat : cat;
+        float imageAspect = (float) frame.getWidth() / frame.getHeight();
         float drawW = availableW;
         float drawH = drawW / imageAspect;
         if (drawH > availableH) {
@@ -176,8 +179,7 @@ public class DeskPetView extends View {
         float left = (w - drawW) * .5f;
         float top = (h - drawH) * .5f;
         destination.set(left, top, left + drawW, top + drawH);
-        canvas.drawBitmap(cat, null, destination, imagePaint);
-        if (state == STATE_BLINK || state == STATE_SLEEP) drawClosedEyes(canvas, destination);
+        canvas.drawBitmap(frame, null, destination, imagePaint);
         canvas.restore();
     }
 
@@ -191,42 +193,4 @@ public class DeskPetView extends View {
         canvas.drawLine(w * .905f, h * .54f, w * .965f, h * .54f, stroke);
     }
 
-    private void drawClosedEyes(Canvas canvas, RectF catBounds) {
-        drawLid(canvas, catBounds, .362f, .694f);
-        drawLid(canvas, catBounds, .542f, .694f);
-    }
-
-    private void drawLid(Canvas canvas, RectF catBounds, float normalizedX, float normalizedY) {
-        float w = catBounds.width();
-        float h = catBounds.height();
-        float cx = catBounds.left + w * normalizedX;
-        float cy = catBounds.top + h * normalizedY;
-        float halfWidth = w * .052f;
-        float halfHeight = h * .058f;
-        Path cover = new Path();
-        cover.moveTo(cx - halfWidth, cy);
-        cover.cubicTo(cx - w * .030f, cy - halfHeight, cx + w * .030f, cy - halfHeight,
-                cx + halfWidth, cy);
-        cover.cubicTo(cx + w * .030f, cy + halfHeight, cx - w * .030f, cy + halfHeight,
-                cx - halfWidth, cy);
-        cover.close();
-
-        Rect source = new Rect(
-                Math.round(cat.getWidth() * (normalizedX - .052f)),
-                Math.round(cat.getHeight() * .510f),
-                Math.round(cat.getWidth() * (normalizedX + .052f)),
-                Math.round(cat.getHeight() * .626f));
-        RectF patchBounds = new RectF(cx - halfWidth, cy - halfHeight,
-                cx + halfWidth, cy + halfHeight);
-        canvas.save();
-        canvas.clipPath(cover);
-        canvas.drawBitmap(cat, source, patchBounds, imagePaint);
-        canvas.restore();
-
-        stroke.setStrokeWidth(h * .013f);
-        stroke.setColor(0xFF17151B);
-        RectF arc = new RectF(cx - w * .043f, cy - h * .018f,
-                cx + w * .043f, cy + h * .032f);
-        canvas.drawArc(arc, 192f, 156f, false, stroke);
-    }
 }
