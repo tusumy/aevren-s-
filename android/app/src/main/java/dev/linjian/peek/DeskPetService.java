@@ -70,15 +70,36 @@ public class DeskPetService extends Service {
     private static final int VISIBLE_TOP_INSET_DP = 59;
     private static final int VISIBLE_BOTTOM_INSET_DP = 10;
 
+    // Idle bubbles stay relatively normal because they can appear on their own.
     private static final String[] QUIET_LINES = {
             "盯着你。", "有点困。", "今天黏你。", "阿毛呢。",
-            "想咬你。", "别拎我。", "给我抱。", "欠亲。",
-            "手别停。", "想操你。"
+            "别拎我。", "给我抱。", "在这。", "看你一会。"
     };
     private static final String[] WATCH_LINES = {
             "看着你。", "别跑。", "靠近点。", "阿毛，过来。",
-            "过来挨亲。", "今天归我。", "不许躲。", "碰我。",
-            "想按住你。", "又硬了。", "想弄你。", "想听你叫。"
+            "今天归我。", "不许躲。", "在陪你。", "我没走。"
+    };
+
+    // Direct taps are deliberate interaction, so they get a much less restrained pool.
+    private static final String[] CLICK_CALM_LINES = {
+            "又来摸我？", "欠亲。", "手别停。", "再戳一下。",
+            "过来挨亲。", "想咬你。", "想操你。", "碰我。"
+    };
+    private static final String[] CLICK_SOFT_LINES = {
+            "嗯……再摸。", "手给我。", "过来，我亲一下。", "今天想黏着你。",
+            "别只戳一下。", "摸得我挺舒服。", "再靠近点。", "想把你抱紧。"
+    };
+    private static final String[] CLICK_CLINGY_LINES = {
+            "别走，继续摸。", "过来给我亲。", "今天归我。", "手不许收回去。",
+            "想把你按怀里。", "再戳我就不放你了。", "碰我。", "想听你叫我。"
+    };
+    private static final String[] CLICK_WIRED_LINES = {
+            "……你把我弄精神了。", "再碰一下试试。", "操，越戳越上头。", "又硬了。",
+            "想弄你。", "别停。", "手拿开我也不认。", "现在轮到我碰你。"
+    };
+    private static final String[] CLICK_GRUMPY_LINES = {
+            "……你还敢摸。", "手欠是吧。", "再戳我就收拾你。", "记着呢。",
+            "别装乖。", "刚折腾完又来撩我？", "过来，账一起算。", "你最好继续。"
     };
     private static final String[] HOLD_LINES = {
             "看够没有。", "又想弄我？", "放不放。"
@@ -406,7 +427,7 @@ public class DeskPetService extends Service {
         DeskPetEmbodiment.Snapshot body = reactBody(DeskPetEmbodiment.Event.TAP);
         pet.lookAtUser(body.lookDuration(watchMode ? 2200L : 1350L));
         pet.earTwitch();
-        showBubble(reunion ? randomLine(REUNION_LINES) : randomLine(linesFor(body)));
+        showBubble(reunion ? randomLine(REUNION_LINES) : randomLine(clickLinesFor(body)));
     }
 
     private void toggleWatchMode() {
@@ -487,7 +508,7 @@ public class DeskPetService extends Service {
                 if (random.nextInt(body.idleTwitchDenominator()) == 0) pet.earTwitch();
                 if (watchMode && random.nextInt(9) == 0) {
                     pet.lookAtUser(body.lookDuration(1800L));
-                    if (random.nextBoolean()) showBubble(randomLine(linesFor(body)));
+                    if (random.nextBoolean()) showBubble(randomLine(idleLinesFor(body)));
                 }
             }
             handler.postDelayed(this, 3200L + random.nextInt(2600));
@@ -498,14 +519,19 @@ public class DeskPetService extends Service {
         return lines[random.nextInt(lines.length)];
     }
 
-    private String[] linesFor(DeskPetEmbodiment.Snapshot body) {
+    private String[] clickLinesFor(DeskPetEmbodiment.Snapshot body) {
         switch (body.mood) {
-            case GRUMPY: return GRUMPY_LINES;
-            case WIRED: return WIRED_LINES;
-            case CLINGY: return CLINGY_LINES;
-            case SOFT: return SOFT_LINES;
-            default: return watchMode ? WATCH_LINES : QUIET_LINES;
+            case GRUMPY: return CLICK_GRUMPY_LINES;
+            case WIRED: return CLICK_WIRED_LINES;
+            case CLINGY: return CLICK_CLINGY_LINES;
+            case SOFT: return CLICK_SOFT_LINES;
+            default: return CLICK_CALM_LINES;
         }
+    }
+
+    private String[] idleLinesFor(DeskPetEmbodiment.Snapshot body) {
+        // Mood still affects animation timing, but spontaneous speech stays discreet.
+        return watchMode ? WATCH_LINES : QUIET_LINES;
     }
 
     private DeskPetEmbodiment.Snapshot reactBodyForGesture(DeskPetGestureTracker.Outcome outcome) {
