@@ -35,6 +35,7 @@ public class DeskPetView extends View {
     private float breath;
     private boolean breathUp = true;
     private float earTwitch;
+    private float activationLevel = .22f;
 
     public DeskPetView(Context context) {
         super(context);
@@ -77,6 +78,11 @@ public class DeskPetView extends View {
         if (watchMode) lookAtUser(2200L);
     }
 
+    /** 0..1 activation from the embodiment layer; only changes animation timing. */
+    public void setActivationLevel(float level) {
+        activationLevel = Math.max(0f, Math.min(1f, level));
+    }
+
     public void peek(long durationMs) {
         if (released || looking) return;
         peeking = true;
@@ -114,7 +120,9 @@ public class DeskPetView extends View {
                     }
                 }, 150L);
             }
-            handler.postDelayed(this, 2600L + random.nextInt(3600));
+            long base = 3000L - Math.round(activationLevel * 1200L);
+            int spread = 3800 - Math.round(activationLevel * 1300f);
+            handler.postDelayed(this, base + random.nextInt(Math.max(1200, spread)));
         }
     };
 
