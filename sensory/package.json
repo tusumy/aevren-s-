@@ -1,0 +1,19 @@
+{
+  "name": "aevren-sensory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remote sensory MCP for Aevren: inspect explicitly supplied audio, music, images and video.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "express": "^4.19.2",
+    "zod": "^3.23.8"
+  }
+}
