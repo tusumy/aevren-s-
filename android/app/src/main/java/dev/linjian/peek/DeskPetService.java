@@ -34,6 +34,12 @@ public class DeskPetService extends Service {
     private static final String CHANNEL_ID = "zhangxinchuang_desk_pet";
     private static final int NOTIFICATION_ID = 20260830;
     private static final String KEY_WATCH_MODE = "desk_pet_watch_mode";
+    private static final String KEY_BODY_STRESS = "desk_pet_body_stress";
+    private static final String KEY_BODY_JOY = "desk_pet_body_joy";
+    private static final String KEY_BODY_BOND = "desk_pet_body_bond";
+    private static final String KEY_BODY_ACTIVATION = "desk_pet_body_activation";
+    private static final String KEY_BODY_UPDATED_AT = "desk_pet_body_updated_at";
+    private static final String KEY_BODY_INTERACTION_AT = "desk_pet_body_interaction_at";
     private static volatile boolean running;
 
     private final Handler handler = new Handler();
@@ -54,6 +60,7 @@ public class DeskPetService extends Service {
     private Runnable pendingHold;
     private Runnable pendingBubbleHide;
     private DeskPetGestureTracker gestureTracker;
+    private DeskPetEmbodiment embodiment;
     private boolean holdReacted;
 
     // The sprite has transparent padding around its visible fur. These bounds let the
@@ -85,6 +92,21 @@ public class DeskPetService extends Service {
     private static final String[] GENTLE_LINES = {
             "这还差不多。", "嗯，就待这。", "手挺乖。"
     };
+    private static final String[] SOFT_LINES = {
+            "嗯。", "再摸。", "今天黏你。", "手给我。"
+    };
+    private static final String[] CLINGY_LINES = {
+            "别走。", "再待会。", "靠近点。", "阿毛。"
+    };
+    private static final String[] WIRED_LINES = {
+            "……我醒了。", "你把我弄精神了。", "手拿稳。", "还在晃。"
+    };
+    private static final String[] GRUMPY_LINES = {
+            "……你还来。", "记着呢。", "手欠。", "别装没事。"
+    };
+    private static final String[] REUNION_LINES = {
+            "……你回来了。", "终于碰我了。", "过来。想你了。"
+    };
 
     public static boolean isRunning() { return running; }
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -98,6 +120,7 @@ public class DeskPetService extends Service {
             return;
         }
         watchMode = AppPrefs.get(this).getBoolean(KEY_WATCH_MODE, false);
+        embodiment = loadEmbodiment();
         showPet();
         running = true;
         handler.post(idleLoop);
@@ -162,6 +185,7 @@ public class DeskPetService extends Service {
         pet.setBackgroundColor(Color.TRANSPARENT);
         pet.setContentDescription("玄砚桌宠");
         pet.setWatchMode(watchMode);
+        syncEmbodiment(embodiment.sample(System.currentTimeMillis()));
         FrameLayout.LayoutParams petLp = new FrameLayout.LayoutParams(dp(138), dp(92),
                 Gravity.BOTTOM | Gravity.END);
         petLp.rightMargin = dp(8);
@@ -278,9 +302,11 @@ public class DeskPetService extends Service {
             pendingHold = null;
             if (holdReacted || pet == null) return;
             holdReacted = true;
-            pet.lookAtUser(2200L);
+            DeskPetEmbodiment.Snapshot body = reactBody(DeskPetEmbodiment.Event.HOLD);
+            pet.lookAtUser(body.lookDuration(2200L));
             pet.earTwitch();
-            showBubble(randomLine(HOLD_LINES));
+            showBubble(body.mood == DeskPetEmbodiment.Mood.GRUMPY
+                    ? randomLine(GRUMPY_LINES) : randomLine(HOLD_LINES));
         };
         handler.postDelayed(pendingHold, 1250L);
     }
@@ -293,14 +319,17 @@ public class DeskPetService extends Service {
     private void reactToGesture(DeskPetGestureTracker.Outcome outcome) {
         pet.animate().cancel();
         positionBubbleForScreenEdge();
+        DeskPetEmbodiment.Snapshot body = reactBodyForGesture(outcome);
         switch (outcome) {
             case SPIN:
-                showBubble(randomLine(SPIN_LINES));
+                showBubble(body.mood == DeskPetEmbodiment.Mood.GRUMPY
+                        ? "……你还转。" : randomLine(SPIN_LINES));
                 pet.animate().rotationBy(720f).scaleX(.94f).scaleY(.94f).setDuration(620L)
                         .withEndAction(this::restorePet).start();
                 break;
             case SHAKE:
-                showBubble(randomLine(SHAKE_LINES));
+                showBubble(body.mood == DeskPetEmbodiment.Mood.GRUMPY
+                        ? "还晃？我记着呢。" : randomLine(SHAKE_LINES));
                 shakePet(4);
                 break;
             case HIT_LEFT:
@@ -371,18 +400,24 @@ public class DeskPetService extends Service {
 
     private void react() {
         if (pet == null) return;
-        pet.lookAtUser(watchMode ? 2200 : 1350);
+        long now = System.currentTimeMillis();
+        boolean reunion = embodiment.reunionDue(now);
+        if (reunion) reactBody(DeskPetEmbodiment.Event.REUNION);
+        DeskPetEmbodiment.Snapshot body = reactBody(DeskPetEmbodiment.Event.TAP);
+        pet.lookAtUser(body.lookDuration(watchMode ? 2200L : 1350L));
         pet.earTwitch();
-        showBubble(randomLine(watchMode ? WATCH_LINES : QUIET_LINES));
+        showBubble(reunion ? randomLine(REUNION_LINES) : randomLine(linesFor(body)));
     }
 
     private void toggleWatchMode() {
         watchMode = !watchMode;
         AppPrefs.get(this).edit().putBoolean(KEY_WATCH_MODE, watchMode).apply();
         pet.setWatchMode(watchMode);
+        DeskPetEmbodiment.Snapshot body = reactBody(watchMode
+                ? DeskPetEmbodiment.Event.WATCH_ON : DeskPetEmbodiment.Event.WATCH_OFF);
         pet.earTwitch();
         if (watchMode) {
-            pet.lookAtUser(2600);
+            pet.lookAtUser(body.lookDuration(2600L));
             showBubble("行，盯着你。");
         } else {
             showBubble("先忍着。");
@@ -445,10 +480,11 @@ public class DeskPetService extends Service {
         @Override public void run() {
             if (pet == null) return;
             if (!dragging) {
-                if (random.nextInt(7) == 0) pet.earTwitch();
+                DeskPetEmbodiment.Snapshot body = sampleBody();
+                if (random.nextInt(body.idleTwitchDenominator()) == 0) pet.earTwitch();
                 if (watchMode && random.nextInt(9) == 0) {
-                    pet.lookAtUser(1800);
-                    if (random.nextBoolean()) showBubble(randomLine(WATCH_LINES));
+                    pet.lookAtUser(body.lookDuration(1800L));
+                    if (random.nextBoolean()) showBubble(randomLine(linesFor(body)));
                 }
             }
             handler.postDelayed(this, 3200L + random.nextInt(2600));
@@ -457,6 +493,70 @@ public class DeskPetService extends Service {
 
     private String randomLine(String[] lines) {
         return lines[random.nextInt(lines.length)];
+    }
+
+    private String[] linesFor(DeskPetEmbodiment.Snapshot body) {
+        switch (body.mood) {
+            case GRUMPY: return GRUMPY_LINES;
+            case WIRED: return WIRED_LINES;
+            case CLINGY: return CLINGY_LINES;
+            case SOFT: return SOFT_LINES;
+            default: return watchMode ? WATCH_LINES : QUIET_LINES;
+        }
+    }
+
+    private DeskPetEmbodiment.Snapshot reactBodyForGesture(DeskPetGestureTracker.Outcome outcome) {
+        switch (outcome) {
+            case GENTLE: return reactBody(DeskPetEmbodiment.Event.GENTLE);
+            case SPIN: return reactBody(DeskPetEmbodiment.Event.SPIN);
+            case SHAKE: return reactBody(DeskPetEmbodiment.Event.SHAKE);
+            case HIT_LEFT:
+            case HIT_RIGHT:
+            case HIT_TOP:
+            case HIT_BOTTOM:
+                return reactBody(DeskPetEmbodiment.Event.HIT_EDGE);
+            default:
+                return sampleBody();
+        }
+    }
+
+    private DeskPetEmbodiment.Snapshot reactBody(DeskPetEmbodiment.Event event) {
+        DeskPetEmbodiment.Snapshot body = embodiment.react(event, System.currentTimeMillis());
+        persistEmbodiment();
+        syncEmbodiment(body);
+        return body;
+    }
+
+    private DeskPetEmbodiment.Snapshot sampleBody() {
+        DeskPetEmbodiment.Snapshot body = embodiment.sample(System.currentTimeMillis());
+        syncEmbodiment(body);
+        return body;
+    }
+
+    private void syncEmbodiment(DeskPetEmbodiment.Snapshot body) {
+        if (pet != null) pet.setActivationLevel(body.activation);
+    }
+
+    private DeskPetEmbodiment loadEmbodiment() {
+        return new DeskPetEmbodiment(
+                AppPrefs.get(this).getFloat(KEY_BODY_STRESS, .22f),
+                AppPrefs.get(this).getFloat(KEY_BODY_JOY, .46f),
+                AppPrefs.get(this).getFloat(KEY_BODY_BOND, .58f),
+                AppPrefs.get(this).getFloat(KEY_BODY_ACTIVATION, .22f),
+                AppPrefs.get(this).getLong(KEY_BODY_UPDATED_AT, 0L),
+                AppPrefs.get(this).getLong(KEY_BODY_INTERACTION_AT, 0L));
+    }
+
+    private void persistEmbodiment() {
+        if (embodiment == null) return;
+        AppPrefs.get(this).edit()
+                .putFloat(KEY_BODY_STRESS, embodiment.stress())
+                .putFloat(KEY_BODY_JOY, embodiment.joy())
+                .putFloat(KEY_BODY_BOND, embodiment.bond())
+                .putFloat(KEY_BODY_ACTIVATION, embodiment.activation())
+                .putLong(KEY_BODY_UPDATED_AT, embodiment.lastUpdatedAt())
+                .putLong(KEY_BODY_INTERACTION_AT, embodiment.lastInteractionAt())
+                .apply();
     }
 
     private void savePosition() {
@@ -476,6 +576,7 @@ public class DeskPetService extends Service {
     }
 
     @Override public void onDestroy() {
+        persistEmbodiment();
         handler.removeCallbacksAndMessages(null);
         pendingBubbleHide = null;
         if (pet != null) pet.release();
