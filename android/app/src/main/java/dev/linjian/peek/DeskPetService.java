@@ -464,8 +464,11 @@ public class DeskPetService extends Service {
         if (bubble == null || bubbleTail == null || params == null) return;
         int screenInset = Math.max(0, -params.y);
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int horizontalShift = params.x < 0 ? -params.x
-                : -Math.max(0, params.x + overlayWidth() - screenWidth);
+        // The bubble is already right-aligned inside the overlay. When the pet reaches
+        // the left edge the overlay itself may sit at a negative x, but shifting the
+        // bubble right would push it past the overlay surface and clip its right side.
+        // Only compensate when the overlay extends beyond the screen's right edge.
+        int horizontalShift = -Math.max(0, params.x + overlayWidth() - screenWidth);
         FrameLayout.LayoutParams bubbleLp = (FrameLayout.LayoutParams) bubble.getLayoutParams();
         FrameLayout.LayoutParams tailLp = (FrameLayout.LayoutParams) bubbleTail.getLayoutParams();
         bubbleLp.topMargin = dp(2) + screenInset;
