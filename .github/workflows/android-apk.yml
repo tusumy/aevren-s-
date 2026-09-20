@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -36,10 +36,21 @@ jobs:
           chmod +x android/build.sh
           android/build.sh
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: aevren-android-v0.3.8.10
           path: android/Zhangxinchuang-public-v0.3.8.10.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish APK release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.3.8.10
+          name: 砚团 v0.3.8.10
+          body: |
+            桌宠 embodiment 状态层：互动有余韵，拖拽、轻放、旋转、晃动和撞边会持续影响后续反应。
+            构建来源：${{ github.sha }}
+          files: android/Zhangxinchuang-public-v0.3.8.10.apk
+          fail_on_unmatched_files: true
