@@ -139,9 +139,9 @@ public class DeskPetView extends View {
         edgeRevealing = false;
         edgeReveal = 0f;
         state = STATE_SLEEP;
+        edgeLookDurationMs = Math.max(650L, lookMs);
         invalidate();
         handler.postDelayed(edgeRevealStep, Math.max(0L, pauseMs));
-        edgeLookDurationMs = Math.max(650L, lookMs);
     }
 
     public void release() {
