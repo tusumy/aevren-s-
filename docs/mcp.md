@@ -164,6 +164,21 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 - `get_visit_history(limit, since_hours, date, source, include_intervals, timezone_offset)`：读取最近若干次到访记录。
 - `get_visit_stats(since_hours, away_threshold_hours, source, timezone_offset)`：统计到访节奏，例如今日次数、最近一次、最近 24 小时/7 天次数和平均间隔。
 
+## Sigillo 封缄回执
+
+Sigillo 回执默认只保存在手机本机，不随生活状态上传。机制改编自 Cu & Lunedì 的 [Sigillo](https://github.com/29-Cu/sigillo)，原项目 CC BY 4.0。
+
+- `sigillo_create`：亲密互动结束进入收尾后开一张本机回执，并在手机上弹出打星卡；只写这一场真实发生过的细节。
+- `sigillo_recent`：读取最近几张已经封缄的本机回执。
+- `sigillo_context`：生成紧凑上下文块，包含最近回执、最近一条 companion note 和当前好评冷却项。
+- `sigillo_note`：把陪伴对象写给下次自己的主观复盘钉回指定回执。
+- `sigillo_get`：按 id 读取一张完整回执。
+- `sigillo_open`：在手机上重新打开指定回执；已封缄时只读。
+
+星数和用户原话是体验记录，不自动翻译成“下次照做”的命令。默认同一个 `(dim, tag)` 连续两张用户回执都达到 4 星及以上时进入冷却，下一张开单会自动剔除该重复项。
+
+官方 ChatGPT App 的消息请求并不经过砚团，因此砚团不能偷偷往现有聊天线程插入 system message；需要模型在相关语境主动调用 `sigillo_context` 读取本机上下文。
+
 ## 安全边界
 
 - 截图、读屏、点击、输入、自动评论、门禁、屏幕休息和息屏都属于敏感能力。

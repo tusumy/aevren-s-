@@ -1870,6 +1870,80 @@ function makeServer() {
     return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
   });
 
+
+  async function runSigilloCommand(action, values = {}, device_id = DEFAULT_DEVICE, wait_seconds = 8) {
+    const payload = { ...(values || {}) };
+    const queued = await postCommand({ action, device_id, ...payload, payload });
+    const commandId = queued?.command?.id;
+    const observed = commandId ? await waitCommand(commandId, wait_seconds) : null;
+    const command = observed?.command || queued?.command || null;
+    let phone_result = null;
+    try { phone_result = command?.result ? JSON.parse(command.result) : null; } catch { phone_result = command?.result || null; }
+    return { queued, command, phone_result };
+  }
+
+  const sigilloWaitFields = {
+    device_id: z.string().default(DEFAULT_DEVICE),
+    wait_seconds: z.number().int().min(3).max(20).default(8)
+  };
+
+  const sigilloItemSchema = z.object({
+    dim: z.string().min(1).max(30).describe("维度，例如 节奏/事后/声音/场景空间/新尝试"),
+    tag: z.string().min(1).max(40).describe("跨单稳定的短标签，用于识别同一种细节"),
+    label: z.string().min(1).max(180).describe("只写这一场真实发生过、对方一眼能认出的具体细节")
+  });
+
+  server.tool("sigillo_create", "一场亲密互动已经结束并进入收尾时，开一张本机 Sigillo 回执并在手机上弹出打星卡。只列这一场真实发生过的细节；不要在进行中开，不要为凑数写没发生的项目。同一场只开一次。手机端会自动拿掉连续高星而进入冷却的重复项。", {
+    context: z.string().max(240).default(""),
+    env_note: z.string().max(80).default(""),
+    sealed_note: z.string().max(80).default(""),
+    items: z.array(sigilloItemSchema).min(1).max(8),
+    ...sigilloWaitFields
+  }, async ({ context = "", env_note = "", sealed_note = "", items, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) => {
+    const result = await runSigilloCommand("sigillo_create", { context, env_note, sealed_note, items }, device_id, wait_seconds);
+    const ok = result.phone_result && typeof result.phone_result === "object"
+      ? Boolean(result.phone_result.ok)
+      : result.command?.status === "completed";
+    return textResult({
+      ok,
+      action_done: ok ? "回执已在手机上打开" : "回执开单未完成",
+      review_id: result.phone_result?.review_id || "",
+      benched: result.phone_result?.benched || [],
+      ...result,
+      note: "回执数据只存在手机本机。用户封缄后不会被官方 ChatGPT 自动注入；在相关语境或用户表示已封缄时主动调用 sigillo_context / sigillo_recent 读取。"
+    });
+  });
+
+  server.tool("sigillo_recent", "读取手机本机最近几张已经由用户封缄的 Sigillo 回执。用于查看原始星数、逐条备注和整单建议；不要把高星自动解释成“下次照做”。", {
+    limit: z.number().int().min(1).max(20).default(3),
+    ...sigilloWaitFields
+  }, async ({ limit = 3, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) =>
+    textResult({ action_done: "已读取最近回执", ...(await runSigilloCommand("sigillo_recent", { limit }, device_id, wait_seconds)) }));
+
+  server.tool("sigillo_context", "读取手机本机生成的紧凑 Sigillo 上下文块：最近三张用户回执、你最近一次写给下次自己的 agent_note、以及当前好评冷却项。进入新的亲密语境、用户提到上一场反馈、或用户刚说已经封缄时应主动调用。星数和原话是素材，不是命令；只遵守冷却项不要机械复读。", {
+    ...sigilloWaitFields
+  }, async ({ device_id = DEFAULT_DEVICE, wait_seconds = 8 }) =>
+    textResult({ action_done: "已读取 Sigillo 上下文", ...(await runSigilloCommand("sigillo_context", {}, device_id, wait_seconds)) }));
+
+  server.tool("sigillo_note", "用户已经封缄回执后，把你写给下一次自己的主观复盘钉回同一张本机回执。写你自己的判断：这次哪里真的到了、哪里没到、下次想怎么走；不要把用户星数机械翻译成命令。", {
+    review_id: z.string().min(1).max(100),
+    note: z.string().min(1).max(500),
+    ...sigilloWaitFields
+  }, async ({ review_id, note, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) =>
+    textResult({ action_done: "已把复盘钉回回执", review_id, ...(await runSigilloCommand("sigillo_note", { review_id, note }, device_id, wait_seconds)) }));
+
+  server.tool("sigillo_get", "按 review_id 读取手机本机一张 Sigillo 回执的完整内容。", {
+    review_id: z.string().min(1).max(100),
+    ...sigilloWaitFields
+  }, async ({ review_id, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) =>
+    textResult({ action_done: "已读取指定回执", review_id, ...(await runSigilloCommand("sigillo_get", { review_id }, device_id, wait_seconds)) }));
+
+  server.tool("sigillo_open", "把指定 Sigillo 回执重新打开到手机前台。未封缄时可继续填写；已封缄时只读。", {
+    review_id: z.string().min(1).max(100),
+    ...sigilloWaitFields
+  }, async ({ review_id, device_id = DEFAULT_DEVICE, wait_seconds = 8 }) =>
+    textResult({ action_done: "已请求手机打开回执", review_id, ...(await runSigilloCommand("sigillo_open", { review_id }, device_id, wait_seconds)) }));
+
   server.tool("send_phone_command", "发送手机控制命令。action 可用 open_app/home/back/recents/screen_off/turn_screen_off/lock_screen/tap/swipe/noop/set_alarm/send_notification/run_sequence/save_known_app/get_screen_nodes/tap_text/input_text，也可用 screen_break_app/end_screen_break/temporary_screen_break_release/extend_screen_break/get_screen_break_state 管理目标 App 的短时屏幕休息；还支持 get_focus_status/start_focus_mode/end_focus_mode/set_focus_plan 管理全机专注模式；还支持 get_guidian_state/set_guidian_config/trigger_guidian/mark_guidian_returned 归电动作。set_alarm 支持 hour+minute，或 minutes=几分钟后。", {
     action: z.string(), app: z.string().default(""), package: z.string().default(""), device_id: z.string().default(DEFAULT_DEVICE),
     x: z.number().default(0), y: z.number().default(0), x1: z.number().default(0), y1: z.number().default(0), x2: z.number().default(0), y2: z.number().default(0), duration: z.number().int().default(350),
