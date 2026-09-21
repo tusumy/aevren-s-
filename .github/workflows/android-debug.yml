@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'mcp/server.js'
+      - 'server/linjian_server.py'
       - '.github/workflows/android-debug.yml'
 
 permissions:
@@ -28,6 +30,12 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Check MCP JavaScript syntax
+        run: node --check mcp/server.js
+
+      - name: Check server Python syntax
+        run: python -m py_compile server/linjian_server.py
 
       - name: Run notification regressions
         run: python android/tests/test_notification_regressions.py
