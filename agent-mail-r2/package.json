@@ -1,0 +1,10 @@
+{
+  "name": "aevren-agent-mail-r2-wrapper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.883.0",
+    "tar": "^7.4.3"
+  }
+}
