@@ -257,8 +257,13 @@ public class SigilloActivity extends Activity {
                 Toast.makeText(this, "第 " + (i + 1) + " 条还没打星。", Toast.LENGTH_SHORT).show();
                 return;
             }
-            stars.put((double) star);
-            notes.put(itemNotes.get(i).getText().toString());
+            try {
+                stars.put((double) star);
+                notes.put(itemNotes.get(i).getText().toString());
+            } catch (Exception e) {
+                Toast.makeText(this, "回执整理失败，请再点一次封缄。", Toast.LENGTH_SHORT).show();
+                return;
+            }
         }
 
         JSONObject fixed = new JSONObject();
