@@ -175,6 +175,14 @@ public class CompanionService extends Service {
                 try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
                 return;
             }
+            if (action.startsWith("sigillo_")) {
+                JSONObject rr = SigilloState.handleCommand(ctx, cmd);
+                boolean ok = rr.optBoolean("ok", false);
+                String result = rr.optString("result", rr.toString());
+                DebugState.append(ctx, "执行 Sigillo 回执命令 " + action + "：" + result);
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); } catch (Exception ignored) { }
+                return;
+            }
             if (action.contains("diary")) {
                 JSONObject rr = DiaryState.handleCommand(ctx, cmd);
                 boolean ok = rr.optBoolean("ok", false);
