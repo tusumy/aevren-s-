@@ -63,6 +63,23 @@ public class DeskPetService extends Service {
     private DeskPetEmbodiment embodiment;
     private boolean holdReacted;
 
+    private static final int EDGE_NONE = 0;
+    private static final int EDGE_LEFT = 1;
+    private static final int EDGE_RIGHT = 2;
+    private static final int EDGE_TOP = 3;
+    private static final int EDGE_BOTTOM = 4;
+    private static final int EDGE_GRAB_SETTLE_MS = 140;
+    private static final int EDGE_STICKY_RELEASE_DP = 34;
+    private static final int EDGE_PULL_AWAY_DP = 28;
+    private static final int EDGE_STRUGGLE_GAP_MS = 105;
+
+    private boolean edgeGrabbed;
+    private int edgeGrabSide = EDGE_NONE;
+    private int dragStartEdgeSide = EDGE_NONE;
+    private int edgeCandidateSide = EDGE_NONE;
+    private long lastEdgeStruggleAt;
+    private Runnable pendingEdgeGrab;
+
     // The sprite has transparent padding around its visible fur. These bounds let the
     // visible cat, rather than the overlay rectangle, reach the four screen edges.
     private static final int VISIBLE_LEFT_INSET_DP = 30;
@@ -259,13 +276,18 @@ public class DeskPetService extends Service {
             case MotionEvent.ACTION_DOWN:
                 dragging = false;
                 holdReacted = false;
+                edgeGrabbed = false;
+                edgeGrabSide = EDGE_NONE;
+                cancelPendingEdgeGrab();
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
                 downX = params.x;
                 downY = params.y;
+                dragStartEdgeSide = edgeSideAt(params.x, params.y, dp(2));
                 gestureTracker.begin(downRawX, downRawY, event.getEventTime());
                 scheduleHoldReaction();
                 pet.animate().cancel();
+                pet.cancelEdgeGrab();
                 pet.setTranslationX(0f);
                 pet.setTranslationY(0f);
                 pet.setRotation(0f);
@@ -280,18 +302,60 @@ public class DeskPetService extends Service {
                 float dy = event.getRawY() - downRawY;
                 if (Math.abs(dx) + Math.abs(dy) > dp(7)) dragging = true;
                 if (dragging) {
+                    if (dragStartEdgeSide != EDGE_NONE && !edgeGrabbed) {
+                        edgeGrabbed = true;
+                        edgeGrabSide = dragStartEdgeSide;
+                        holdReacted = true;
+                        cancelHoldReaction();
+                        pet.holdEdge(edgeGrabSide);
+                    }
+
+                    if (edgeGrabbed && dragStartEdgeSide != EDGE_NONE) {
+                        float pull = (float) Math.hypot(dx, dy);
+                        if (pull <= dp(EDGE_STICKY_RELEASE_DP)) {
+                            maybeEdgeStruggle(event.getEventTime());
+                            return true;
+                        }
+                        showBubble("还真拽。");
+                        pet.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        leaveEdgeGrabDuringDrag(event);
+                        return true;
+                    }
+
                     gestureTracker.move(event.getRawX(), event.getRawY(), event.getEventTime());
-                    scheduleHoldReaction();
-                    params.x = clamp(downX + Math.round(dx), minX(), maxX());
-                    params.y = clamp(downY + Math.round(dy), minY(), maxY());
+                    if (!edgeGrabbed) scheduleHoldReaction();
+
+                    int targetX = downX + Math.round(dx);
+                    int targetY = downY + Math.round(dy);
+
+                    if (edgeGrabbed) {
+                        if (pulledAwayFromEdge(targetX, targetY, edgeGrabSide)) {
+                            leaveEdgeGrabDuringDrag(event);
+                            return true;
+                        }
+                        applyEdgeLockedPosition(targetX, targetY);
+                        maybeEdgeStruggle(event.getEventTime());
+                        windowManager.updateViewLayout(root, params);
+                        return true;
+                    }
+
+                    params.x = clamp(targetX, minX(), maxX());
+                    params.y = clamp(targetY, minY(), maxY());
                     pet.setRotation(clampFloat(dx / 22f, -4f, 4f));
                     windowManager.updateViewLayout(root, params);
+
+                    int candidate = edgeSideForTarget(targetX, targetY, dx, dy);
+                    updateEdgeCandidate(candidate);
                 }
                 return true;
 
             case MotionEvent.ACTION_UP:
                 cancelHoldReaction();
-                if (dragging) {
+                cancelPendingEdgeGrab();
+                if (edgeGrabbed) {
+                    savePosition();
+                    finishEdgeGrab();
+                } else if (dragging) {
                     DeskPetGestureTracker.Outcome outcome = holdReacted
                             ? DeskPetGestureTracker.Outcome.NONE
                             : gestureTracker.finish(event.getRawX(), event.getRawY(), event.getEventTime(),
@@ -299,16 +363,26 @@ public class DeskPetService extends Service {
                                     params.y <= minY() + dp(2), params.y >= maxY() - dp(2));
                     savePosition();
                     reactToGesture(outcome);
+                } else if (!holdReacted) {
+                    handleTap();
+                } else {
+                    restorePet();
                 }
-                else if (!holdReacted) handleTap();
-                else restorePet();
                 dragging = false;
+                dragStartEdgeSide = EDGE_NONE;
+                edgeGrabbed = false;
+                edgeGrabSide = EDGE_NONE;
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
                 cancelHoldReaction();
+                cancelPendingEdgeGrab();
+                if (pet != null) pet.cancelEdgeGrab();
                 restorePet();
                 dragging = false;
+                edgeGrabbed = false;
+                edgeGrabSide = EDGE_NONE;
+                dragStartEdgeSide = EDGE_NONE;
                 return true;
 
             default:
@@ -335,6 +409,172 @@ public class DeskPetService extends Service {
     private void cancelHoldReaction() {
         if (pendingHold != null) handler.removeCallbacks(pendingHold);
         pendingHold = null;
+    }
+
+    private void updateEdgeCandidate(int side) {
+        if (edgeGrabbed) return;
+        if (side == EDGE_NONE) {
+            cancelPendingEdgeGrab();
+            return;
+        }
+        if (edgeCandidateSide == side && pendingEdgeGrab != null) return;
+        cancelPendingEdgeGrab();
+        edgeCandidateSide = side;
+        final int candidate = side;
+        pendingEdgeGrab = () -> {
+            pendingEdgeGrab = null;
+            if (!dragging || edgeGrabbed || edgeCandidateSide != candidate || pet == null) return;
+            enterEdgeGrab(candidate);
+        };
+        handler.postDelayed(pendingEdgeGrab, EDGE_GRAB_SETTLE_MS);
+    }
+
+    private void cancelPendingEdgeGrab() {
+        if (pendingEdgeGrab != null) handler.removeCallbacks(pendingEdgeGrab);
+        pendingEdgeGrab = null;
+        edgeCandidateSide = EDGE_NONE;
+    }
+
+    private void enterEdgeGrab(int side) {
+        cancelPendingEdgeGrab();
+        cancelHoldReaction();
+        holdReacted = true;
+        edgeGrabbed = true;
+        edgeGrabSide = side;
+        dragStartEdgeSide = EDGE_NONE;
+        applyEdgeLockedPosition(params.x, params.y);
+        if (pet != null) {
+            pet.animate().cancel();
+            pet.setTranslationX(0f);
+            pet.setTranslationY(0f);
+            pet.setRotation(0f);
+            pet.setScaleX(1f);
+            pet.setScaleY(1f);
+            pet.holdEdge(side);
+            pet.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        }
+        if (windowManager != null && root != null) windowManager.updateViewLayout(root, params);
+    }
+
+    private void leaveEdgeGrabDuringDrag(MotionEvent event) {
+        cancelPendingEdgeGrab();
+        if (pet != null) {
+            pet.animate().cancel();
+            pet.cancelEdgeGrab();
+            pet.setTranslationX(0f);
+            pet.setTranslationY(0f);
+            pet.setRotation(0f);
+            pet.setScaleX(1f);
+            pet.setScaleY(1f);
+        }
+        edgeGrabbed = false;
+        edgeGrabSide = EDGE_NONE;
+        dragStartEdgeSide = EDGE_NONE;
+        holdReacted = false;
+        downRawX = event.getRawX();
+        downRawY = event.getRawY();
+        downX = params.x;
+        downY = params.y;
+        gestureTracker.begin(downRawX, downRawY, event.getEventTime());
+        scheduleHoldReaction();
+    }
+
+    private void finishEdgeGrab() {
+        if (pet == null) return;
+        pet.animate().cancel();
+        pet.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).rotation(0f)
+                .setDuration(170L).start();
+        pet.releaseEdgeGrab(460L, 1850L);
+        handler.postDelayed(() -> {
+            if (pet == null) return;
+            pet.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            showBubble("你最好是舍不得我。");
+        }, 760L);
+    }
+
+    private void maybeEdgeStruggle(long eventTime) {
+        if (!edgeGrabbed || pet == null) return;
+        if (eventTime - lastEdgeStruggleAt < EDGE_STRUGGLE_GAP_MS) return;
+        lastEdgeStruggleAt = eventTime;
+
+        float tx = 0f;
+        float ty = 0f;
+        float rotation = 0f;
+        if (edgeGrabSide == EDGE_LEFT) {
+            tx = dp(3);
+            rotation = 2.2f;
+        } else if (edgeGrabSide == EDGE_RIGHT) {
+            tx = -dp(3);
+            rotation = -2.2f;
+        } else if (edgeGrabSide == EDGE_TOP) {
+            ty = dp(3);
+            rotation = -1.8f;
+        } else if (edgeGrabSide == EDGE_BOTTOM) {
+            ty = -dp(3);
+            rotation = 1.8f;
+        }
+
+        final float finalTx = tx;
+        final float finalTy = ty;
+        pet.animate().cancel();
+        pet.animate().translationX(finalTx).translationY(finalTy).rotation(rotation)
+                .scaleX(.985f).scaleY(1.015f).setDuration(65L)
+                .withEndAction(() -> {
+                    if (pet == null || !edgeGrabbed) return;
+                    pet.animate().translationX(0f).translationY(0f).rotation(0f)
+                            .scaleX(1f).scaleY(1f).setDuration(80L).start();
+                }).start();
+    }
+
+    private void applyEdgeLockedPosition(int targetX, int targetY) {
+        params.x = clamp(targetX, minX(), maxX());
+        params.y = clamp(targetY, minY(), maxY());
+        if (edgeGrabSide == EDGE_LEFT) params.x = minX();
+        else if (edgeGrabSide == EDGE_RIGHT) params.x = maxX();
+        else if (edgeGrabSide == EDGE_TOP) params.y = minY();
+        else if (edgeGrabSide == EDGE_BOTTOM) params.y = maxY();
+    }
+
+    private boolean pulledAwayFromEdge(int targetX, int targetY, int side) {
+        int gap = dp(EDGE_PULL_AWAY_DP);
+        if (side == EDGE_LEFT) return targetX >= minX() + gap;
+        if (side == EDGE_RIGHT) return targetX <= maxX() - gap;
+        if (side == EDGE_TOP) return targetY >= minY() + gap;
+        if (side == EDGE_BOTTOM) return targetY <= maxY() - gap;
+        return true;
+    }
+
+    private int edgeSideAt(int x, int y, int tolerance) {
+        int bestSide = EDGE_NONE;
+        int best = Integer.MAX_VALUE;
+        int left = Math.abs(x - minX());
+        int right = Math.abs(x - maxX());
+        int top = Math.abs(y - minY());
+        int bottom = Math.abs(y - maxY());
+        if (left <= tolerance && left < best) { best = left; bestSide = EDGE_LEFT; }
+        if (right <= tolerance && right < best) { best = right; bestSide = EDGE_RIGHT; }
+        if (top <= tolerance && top < best) { best = top; bestSide = EDGE_TOP; }
+        if (bottom <= tolerance && bottom < best) { bestSide = EDGE_BOTTOM; }
+        return bestSide;
+    }
+
+    private int edgeSideForTarget(int targetX, int targetY, float dx, float dy) {
+        boolean left = targetX <= minX() + dp(2);
+        boolean right = targetX >= maxX() - dp(2);
+        boolean top = targetY <= minY() + dp(2);
+        boolean bottom = targetY >= maxY() - dp(2);
+
+        boolean horizontal = left || right;
+        boolean vertical = top || bottom;
+        if (horizontal && vertical) {
+            if (Math.abs(dx) >= Math.abs(dy)) return left ? EDGE_LEFT : EDGE_RIGHT;
+            return top ? EDGE_TOP : EDGE_BOTTOM;
+        }
+        if (left) return EDGE_LEFT;
+        if (right) return EDGE_RIGHT;
+        if (top) return EDGE_TOP;
+        if (bottom) return EDGE_BOTTOM;
+        return EDGE_NONE;
     }
 
     private void reactToGesture(DeskPetGestureTracker.Outcome outcome) {
