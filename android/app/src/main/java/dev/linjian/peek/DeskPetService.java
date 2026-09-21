@@ -516,8 +516,9 @@ public class DeskPetService extends Service {
 
         final float finalTx = tx;
         final float finalTy = ty;
+        final float finalRotation = rotation;
         pet.animate().cancel();
-        pet.animate().translationX(finalTx).translationY(finalTy).rotation(rotation)
+        pet.animate().translationX(finalTx).translationY(finalTy).rotation(finalRotation)
                 .scaleX(.985f).scaleY(1.015f).setDuration(65L)
                 .withEndAction(() -> {
                     if (pet == null || !edgeGrabbed) return;
