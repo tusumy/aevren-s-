@@ -174,12 +174,33 @@ let lastSignature = await signature();
 
 const upstreamDir = path.join(process.cwd(), "upstream");
 const cliPath = path.join(upstreamDir, "node_modules", ".bin", "agently-cli");
+
+const httpAppPath = path.join(upstreamDir, "dist", "http-app.js");
+try {
+  const httpApp = await readFile(httpAppPath, "utf8");
+  if (!httpApp.includes('app.set("trust proxy", 1)')) {
+    const proxyPatched = httpApp.replace(
+      "const app = express();",
+      'const app = express();\n    app.set("trust proxy", 1);'
+    );
+    if (proxyPatched !== httpApp) {
+      await writeFile(httpAppPath, proxyPatched, "utf8");
+      log("render_proxy_patch_applied");
+    } else {
+      log("render_proxy_patch_skipped", { reason: "anchor_not_found" });
+    }
+  }
+} catch (error) {
+  log("render_proxy_patch_failed", { message: String(error?.message || error) });
+}
+
 const child = spawn(process.execPath, ["dist/index.js"], {
   cwd: upstreamDir,
   stdio: "inherit",
   env: {
     ...process.env,
     AGENTLY_CLI_CONFIG_DIR: CONFIG_DIR,
+    OAUTH_CLIENTS_FILE: process.env.OAUTH_CLIENTS_FILE || path.join(CONFIG_DIR, "oauth-clients.json"),
     AGENTLY_BIN: cliPath,
   },
 });
