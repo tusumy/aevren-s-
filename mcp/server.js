@@ -1005,7 +1005,7 @@ function makeWalletTakeoutServer() {
 function makeServer() {
   const server = new McpServer({ name: "掌心窗", version: "0.3.8.8" });
   const commandBackedTools = new Set([
-    "peek_screen", "get_screen_nodes", "tap_text", "input_text", "draft_xhs_comment", "xhs_comment", "send_visible_comment_after_confirmation",
+    "peek_screen", "peek_now", "summon", "get_screen_nodes", "tap_text", "input_text", "draft_xhs_comment", "xhs_comment", "send_visible_comment_after_confirmation",
     "add_guardian_calendar_event", "care_action", "trigger_guidian", "mark_guidian_returned",
     "set_guidian_config", "send_weather_notification", "send_phone_command", "open_app", "phone_home", "phone_back", "phone_recents",
     "phone_screen_off", "send_notification", "set_alarm", "run_sequence", "run_preset", "save_known_app", "screen_break_app",
@@ -1141,6 +1141,51 @@ function makeServer() {
 
   // 把小金库/外卖统一入口放在普通 /mcp 的靠前位置，避免客户端只读取前若干个工具时漏掉新版能力。
   registerWalletTakeoutTools(server, { includeUnified: true });
+
+  server.tool(
+    "peek_now",
+    "一键查看手机现在的状态：先读取最近缓存的 current_package/screen_text 等状态，再主动请求一张新截图。只复用现有状态读取与 peek 截图链路，不改变手机端协议。",
+    {
+      device_id: z.string().default(DEFAULT_DEVICE),
+      wait_seconds: z.number().int().min(3).max(60).default(20).describe("等待新截图上传的秒数。")
+    },
+    async ({ device_id = DEFAULT_DEVICE, wait_seconds = 20 }) => {
+      let phoneState = null;
+      try {
+        const stateRes = await linjianFetch(`/api/device/state?device_id=${encodeURIComponent(device_id)}`, { timeout_ms: QUICK_FETCH_TIMEOUT_MS });
+        phoneState = await stateRes.json();
+      } catch (error) {
+        phoneState = { ok: false, error: "phone_state_fetch_failed", detail: String(error?.message || error).slice(0, 500) };
+      }
+
+      const before = await latestMtime();
+      const queued = await postCommand({ action: "peek", device_id });
+      const deadline = Date.now() + wait_seconds * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const info = await latestInfo().catch(() => null);
+        if (info && Number(info.mtime || 0) > before) {
+          const img = await fetchLatestImage();
+          postCompanionAction("get_phone_state", { device_id, summary: "查看了手机当前状态并请求了新截图" }).catch(() => null);
+          return {
+            content: [
+              { type: "text", text: JSON.stringify({ ok: true, device_id, phone_state: phoneState, queued, screenshot: { filename: info.filename || "latest", size: info.size || img.bytes, mtime: info.mtime || null } }, null, 2) },
+              { type: "image", data: img.data, mimeType: img.mimeType }
+            ]
+          };
+        }
+      }
+
+      return textResult({
+        ok: false,
+        device_id,
+        phone_state: phoneState,
+        queued,
+        screenshot_timeout: true,
+        message: `已读取当前缓存状态，但等待 ${wait_seconds} 秒仍未收到新截图；原有 peek_screen、状态读取和手机端功能不受影响。`
+      });
+    }
+  );
 
   server.tool(
     "peek_screen",
@@ -1857,6 +1902,35 @@ function makeServer() {
     }
     const result = await postCommand({ ...outgoing, payload: outgoing });
     return { content: [{ type: "text", text: JSON.stringify({ ...result, safety_note: "命令已排队，手机执行器下一次轮询时执行。若需要实时确认结果，请稍后读取命令状态或查看掌心窗调试日志。" }, null, 2) }] };
+  });
+
+  server.tool("summon", "把陪伴对象所在的 App 拉到手机前台。默认打开 ChatGPT；本工具只是现有 open_app 的快捷包装，不新增 Android 权限或新命令。", {
+    app: z.string().default("ChatGPT"),
+    package: z.string().default("com.openai.chatgpt"),
+    device_id: z.string().default(DEFAULT_DEVICE),
+    wait_seconds: z.number().int().min(3).max(12).default(5)
+  }, async ({ app = "ChatGPT", package: pkg = "com.openai.chatgpt", device_id = DEFAULT_DEVICE, wait_seconds = 5 }) => {
+    const target = normalizeAppTarget(app, pkg);
+    const fallbackPackage = target.package || "com.openai.chatgpt";
+    const fallbackApp = target.app || "ChatGPT";
+    const result = await postCommand({
+      action: "open_app",
+      app: fallbackApp,
+      package: fallbackPackage,
+      device_id,
+      payload: { app: fallbackApp, package: fallbackPackage }
+    });
+    const id = result?.command?.id;
+    const observed = id ? await waitCommand(id, wait_seconds) : null;
+    postCompanionAction("open_app", { device_id, summary: `把${fallbackApp || fallbackPackage}拉回了前台` }).catch(() => null);
+    return textResult({
+      ok: observed?.command?.status === "completed" || result?.queued === true || result?.ok === true || Boolean(id),
+      action: "summon",
+      target: { app: fallbackApp, package: fallbackPackage },
+      queued: result,
+      observed_status: observed?.command || null,
+      note: "summon 复用现有 open_app；若系统厂商限制后台拉起，仍按原 open_app/归电权限与系统行为处理。"
+    });
   });
 
   server.tool("open_app", "打开指定 App。app 可填用户保存的应用昵称，或直接传 package。当用户明确要求打开或前往某个 App 时使用；若只是闲聊提到 App，不必每次打开。参数为空时会直接提示，不再下发 package_empty。", { app: z.string().default(""), package: z.string().default(""), device_id: z.string().default(DEFAULT_DEVICE) }, async ({ app = "", package: pkg = "", device_id = DEFAULT_DEVICE }) => {
