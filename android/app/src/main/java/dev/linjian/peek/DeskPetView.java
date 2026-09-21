@@ -31,6 +31,10 @@ public class DeskPetView extends View {
     private int state = STATE_IDLE;
     private boolean looking;
     private boolean peeking;
+    private boolean edgeGrabbed;
+    private boolean edgeRevealing;
+    private int edgeSide;
+    private float edgeReveal;
     private boolean released;
     private float breath;
     private boolean breathUp = true;
@@ -53,6 +57,10 @@ public class DeskPetView extends View {
     }
 
     public void lookAtUser(long durationMs) {
+        handler.removeCallbacks(edgeRevealStep);
+        edgeGrabbed = false;
+        edgeRevealing = false;
+        edgeReveal = 0f;
         looking = true;
         peeking = false;
         state = STATE_PEEK;
@@ -96,10 +104,72 @@ public class DeskPetView extends View {
         }, durationMs);
     }
 
+    public void holdEdge(int side) {
+        if (released) return;
+        handler.removeCallbacks(stopLooking);
+        handler.removeCallbacks(edgeRevealStep);
+        looking = false;
+        peeking = false;
+        edgeGrabbed = true;
+        edgeRevealing = false;
+        edgeSide = side;
+        edgeReveal = 0f;
+        state = STATE_SLEEP;
+        invalidate();
+    }
+
+    public void cancelEdgeGrab() {
+        if (released) return;
+        handler.removeCallbacks(edgeRevealStep);
+        edgeGrabbed = false;
+        edgeRevealing = false;
+        edgeReveal = 0f;
+        edgeSide = 0;
+        if (!looking && !peeking) state = STATE_IDLE;
+        invalidate();
+    }
+
+    public void releaseEdgeGrab(long pauseMs, long lookMs) {
+        if (released) return;
+        handler.removeCallbacks(stopLooking);
+        handler.removeCallbacks(edgeRevealStep);
+        looking = false;
+        peeking = false;
+        edgeGrabbed = false;
+        edgeRevealing = false;
+        edgeReveal = 0f;
+        state = STATE_SLEEP;
+        invalidate();
+        handler.postDelayed(edgeRevealStep, Math.max(0L, pauseMs));
+        edgeLookDurationMs = Math.max(650L, lookMs);
+    }
+
     public void release() {
         released = true;
         handler.removeCallbacksAndMessages(null);
     }
+
+    private long edgeLookDurationMs = 1800L;
+
+    private final Runnable edgeRevealStep = new Runnable() {
+        @Override public void run() {
+            if (released) return;
+            edgeRevealing = true;
+            edgeReveal = Math.min(1f, edgeReveal + .2f);
+            invalidate();
+            if (edgeReveal < 1f) {
+                handler.postDelayed(this, 55L);
+                return;
+            }
+            edgeRevealing = false;
+            edgeSide = 0;
+            looking = true;
+            state = STATE_PEEK;
+            invalidate();
+            handler.removeCallbacks(stopLooking);
+            handler.postDelayed(stopLooking, edgeLookDurationMs);
+        }
+    };
 
     private final Runnable stopLooking = () -> {
         looking = false;
@@ -169,13 +239,16 @@ public class DeskPetView extends View {
 
         float bob = breath * h * .008f + (peeking ? h * .025f : 0f);
         float twitch = earTwitch * 1.2f;
+        float edgeLean = edgeGrabbed && edgeSide == 1 ? -1.6f
+                : edgeGrabbed && edgeSide == 2 ? 1.6f : 0f;
         canvas.save();
         canvas.translate(0f, bob);
-        canvas.rotate(twitch, w * .44f, h * .42f);
+        canvas.rotate(twitch + edgeLean, w * .44f, h * .42f);
         drawAttentionMarks(canvas, w, h);
         float availableW = w * .97f;
         float availableH = h * .945f;
-        Bitmap frame = (state == STATE_BLINK || state == STATE_SLEEP)
+        boolean edgeClosed = edgeGrabbed || edgeRevealing;
+        Bitmap frame = (edgeClosed || state == STATE_BLINK || state == STATE_SLEEP)
                 && closedCat != null && !closedCat.isRecycled() ? closedCat : cat;
         float imageAspect = (float) frame.getWidth() / frame.getHeight();
         float drawW = availableW;
@@ -187,7 +260,13 @@ public class DeskPetView extends View {
         float left = (w - drawW) * .5f;
         float top = (h - drawH) * .5f;
         destination.set(left, top, left + drawW, top + drawH);
+        imagePaint.setAlpha(255);
         canvas.drawBitmap(frame, null, destination, imagePaint);
+        if (edgeRevealing && cat != null && !cat.isRecycled() && edgeReveal > 0f) {
+            imagePaint.setAlpha(Math.max(0, Math.min(255, Math.round(255f * edgeReveal))));
+            canvas.drawBitmap(cat, null, destination, imagePaint);
+            imagePaint.setAlpha(255);
+        }
         canvas.restore();
     }
 
