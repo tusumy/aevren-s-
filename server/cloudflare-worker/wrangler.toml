@@ -1,5 +1,5 @@
 name = "aevren-window"
-main = "worker.js"
+main = "entry.js"
 compatibility_date = "2026-08-22"
 
 # Secrets are configured in Cloudflare, never committed here:
