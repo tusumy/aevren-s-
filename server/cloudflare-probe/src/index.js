@@ -1,8 +1,9 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import legacyWorker from "../../cloudflare-worker/worker.js";
 
-const DEFAULT_DEVICE = "android-phone";
+const PROBE_VERSION = "0.4.0-full-bridge";
 
 function textResult(payload) {
   return {
@@ -10,12 +11,120 @@ function textResult(payload) {
   };
 }
 
+function zodForSchema(schema = {}) {
+  if (Object.prototype.hasOwnProperty.call(schema || {}, "const")) {
+    return z.literal(schema.const);
+  }
+
+  if (Array.isArray(schema?.enum) && schema.enum.length) {
+    const values = schema.enum;
+    if (values.every((value) => typeof value === "string")) {
+      return z.enum(values);
+    }
+    return z.union(values.map((value) => z.literal(value)));
+  }
+
+  const variants = schema?.anyOf || schema?.oneOf;
+  if (Array.isArray(variants) && variants.length) {
+    const converted = variants.map((part) => zodForSchema(part || {}));
+    return converted.length === 1 ? converted[0] : z.union(converted);
+  }
+
+  const rawType = schema?.type;
+  const types = Array.isArray(rawType) ? rawType : [rawType || "string"];
+  const nullable = types.includes("null");
+  const type = types.find((value) => value !== "null") || "string";
+
+  let out;
+  if (type === "string") out = z.string();
+  else if (type === "integer") out = z.number().int();
+  else if (type === "number") out = z.number();
+  else if (type === "boolean") out = z.boolean();
+  else if (type === "array") out = z.array(zodForSchema(schema.items || {}));
+  else if (type === "object") {
+    const properties = schema.properties || {};
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const shape = {};
+    for (const [key, childSchema] of Object.entries(properties)) {
+      let child = zodForSchema(childSchema || {});
+      if (Object.prototype.hasOwnProperty.call(childSchema || {}, "default")) {
+        child = child.default(childSchema.default);
+      } else if (!required.has(key)) {
+        child = child.optional();
+      }
+      shape[key] = child;
+    }
+    out = z.object(shape);
+    if (schema.additionalProperties === true) out = out.passthrough();
+  } else {
+    out = z.any();
+  }
+
+  if (nullable) out = out.nullable();
+  return out;
+}
+
+function rootShape(schema = {}) {
+  const properties = schema?.properties || {};
+  const required = new Set(Array.isArray(schema?.required) ? schema.required : []);
+  const shape = {};
+  for (const [key, childSchema] of Object.entries(properties)) {
+    let child = zodForSchema(childSchema || {});
+    if (Object.prototype.hasOwnProperty.call(childSchema || {}, "default")) {
+      child = child.default(childSchema.default);
+    } else if (!required.has(key)) {
+      child = child.optional();
+    }
+    shape[key] = child;
+  }
+  return shape;
+}
+
+async function legacyRpcWithEnv(env, method, params = {}) {
+  const token = String(env?.LINJIAN_TOKEN || "");
+  if (!token) throw new Error("LINJIAN_TOKEN is not configured in probe runtime.");
+
+  const request = new Request(
+    `https://legacy.internal/mcp?token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: crypto.randomUUID(),
+        method,
+        params,
+      }),
+    },
+  );
+
+  const response = await legacyWorker.fetch(request, env);
+  const payload = await response.json();
+  if (!response.ok || payload?.error) {
+    const message =
+      payload?.error?.message ||
+      payload?.error ||
+      `Legacy MCP RPC failed with ${response.status}`;
+    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+  }
+  return payload?.result;
+}
+
 export class WindowProbeMCP extends McpAgent {
+  bridgeStatus = {
+    initialized: false,
+    tool_count: 0,
+    resource_count: 0,
+    tool_errors: [],
+    resource_errors: [],
+    fatal_error: "",
+  };
+
   server = new McpServer(
-    { name: "aevren-window-probe", version: "0.3.0" },
+    { name: "aevren-window-probe", version: PROBE_VERSION },
     {
       instructions:
-        "Isolated MCP probe used to rebuild 掌心窗 one verified layer at a time.",
+        "掌心窗验证外壳：使用已经验证可连接的 Cloudflare McpAgent transport，整块复用现有掌心窗业务工具。",
     },
   );
 
@@ -24,10 +133,8 @@ export class WindowProbeMCP extends McpAgent {
       "ping_window_probe",
       {
         title: "Ping Window Probe",
-        description: "Return a tiny success payload. This tool does not access the phone, D1, KV, or any private data.",
-        inputSchema: {
-          text: z.string().max(120).optional(),
-        },
+        description: "Return a tiny success payload from the verified MCP transport.",
+        inputSchema: { text: z.string().max(120).optional() },
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -38,74 +145,118 @@ export class WindowProbeMCP extends McpAgent {
         textResult({
           ok: true,
           service: "aevren-window-probe",
+          version: PROBE_VERSION,
           echo: text || "pong",
           at: new Date().toISOString(),
         }),
     );
 
     this.server.registerTool(
-      "get_phone_state",
+      "probe_bridge_status",
       {
-        title: "读取手机最近状态",
-        description: "从掌心窗现有 D1 device_state 表读取手机最近一次上报状态。只读，不下发任何控制命令。",
-        inputSchema: {
-          device_id: z.string().min(1).max(80).optional().default(DEFAULT_DEVICE),
-        },
+        title: "掌心窗桥接状态",
+        description: "只读查看本次探针启动时批量桥接旧掌心窗工具和资源的结果。",
+        inputSchema: {},
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
           openWorldHint: false,
         },
       },
-      async ({ device_id }) => {
-        const chosenDevice = String(device_id || DEFAULT_DEVICE).trim() || DEFAULT_DEVICE;
-        try {
-          if (!this.env?.DB) {
-            return {
-              isError: true,
-              ...textResult({ ok: false, error: "PROBE_DB_BINDING_MISSING" }),
-            };
-          }
-
-          const row = await this.env.DB.prepare(
-            "SELECT state_json FROM device_state WHERE device_id=?",
-          )
-            .bind(chosenDevice)
-            .first();
-
-          let state = null;
-          if (row?.state_json) {
-            try {
-              state = JSON.parse(row.state_json);
-            } catch {
-              state = { raw_state_json: String(row.state_json) };
-            }
-          }
-
-          return textResult({
-            ok: true,
-            device_id: chosenDevice,
-            state,
-            life_state: state,
-            source: "probe_d1_device_state",
-          });
-        } catch (error) {
-          return {
-            isError: true,
-            ...textResult({
-              ok: false,
-              error: "PROBE_DB_READ_FAILED",
-              message: error instanceof Error ? error.message : String(error),
-            }),
-          };
-        }
-      },
+      async () => textResult(this.bridgeStatus),
     );
+
+    try {
+      const listed = await legacyRpcWithEnv(this.env, "tools/list");
+      const tools = Array.isArray(listed?.tools) ? listed.tools : [];
+
+      for (const tool of tools) {
+        try {
+          this.server.registerTool(
+            tool.name,
+            {
+              title: tool.title,
+              description: tool.description || "",
+              inputSchema: rootShape(
+                tool.inputSchema || { type: "object", properties: {} },
+              ),
+              annotations: tool.annotations,
+              _meta: tool._meta,
+            },
+            async (args) => {
+              try {
+                return await legacyRpcWithEnv(this.env, "tools/call", {
+                  name: tool.name,
+                  arguments: args || {},
+                });
+              } catch (error) {
+                return {
+                  isError: true,
+                  content: [
+                    {
+                      type: "text",
+                      text: error instanceof Error ? error.message : String(error),
+                    },
+                  ],
+                };
+              }
+            },
+          );
+          this.bridgeStatus.tool_count += 1;
+        } catch (error) {
+          this.bridgeStatus.tool_errors.push({
+            name: tool?.name || "unknown",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      try {
+        const listedResources = await legacyRpcWithEnv(this.env, "resources/list");
+        const resources = Array.isArray(listedResources?.resources)
+          ? listedResources.resources
+          : [];
+
+        for (const resource of resources) {
+          try {
+            this.server.registerResource(
+              resource.name || resource.uri,
+              resource.uri,
+              {
+                title: resource.name || resource.uri,
+                description: resource.description || "",
+                mimeType: resource.mimeType,
+              },
+              async () =>
+                legacyRpcWithEnv(this.env, "resources/read", {
+                  uri: resource.uri,
+                }),
+            );
+            this.bridgeStatus.resource_count += 1;
+          } catch (error) {
+            this.bridgeStatus.resource_errors.push({
+              uri: resource?.uri || "unknown",
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      } catch (error) {
+        this.bridgeStatus.resource_errors.push({
+          uri: "resources/list",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      this.bridgeStatus.initialized = true;
+    } catch (error) {
+      this.bridgeStatus.fatal_error =
+        error instanceof Error ? error.message : String(error);
+      console.error("Probe legacy bridge initialization failed", error);
+    }
   }
 }
 
-const publicMcpHandler = WindowProbeMCP.serve("/mcp", { binding: "WindowProbeMCP" });
-const tokenMcpHandler = WindowProbeMCP.serve("/mcp-token", { binding: "WindowProbeMCP" });
+const mcpHandler = WindowProbeMCP.serve("/mcp", { binding: "WindowProbeMCP" });
 
 function corsHeaders() {
   return {
@@ -142,23 +293,6 @@ function json(payload, status = 200) {
   });
 }
 
-async function runHandler(handler, request, env, ctx, label) {
-  try {
-    return await handler.fetch(request, env, ctx);
-  } catch (error) {
-    console.error(`${label} MCP handler failure`, error);
-    return json(
-      {
-        ok: false,
-        stage: label,
-        name: error instanceof Error ? error.name : "Error",
-        message: error instanceof Error ? error.message : String(error),
-      },
-      500,
-    );
-  }
-}
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -178,39 +312,50 @@ export default {
       return Response.json({
         ok: true,
         name: "aevren-window-probe",
-        version: "0.3.0",
+        version: PROBE_VERSION,
         runtime: "cloudflare-workers",
         transport: "sessionful-streamable-http",
         binding,
         db_configured: Boolean(env?.DB),
+        kv_configured: Boolean(env?.SCREENSHOT_KV),
         token_configured: Boolean(env?.LINJIAN_TOKEN),
-        tools: ["ping_window_probe", "get_phone_state"],
-        routes: {
-          public: "/mcp",
-          token: "/mcp-token?token=...",
-        },
+        route: "/mcp?token=...",
       });
     }
 
-    if (url.pathname === "/mcp" || url.pathname === "/mcp-token") {
+    if (url.pathname === "/mcp") {
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders() });
       }
 
-      if (url.pathname === "/mcp-token") {
-        if (!env?.LINJIAN_TOKEN) {
-          return json({ ok: false, error: "PROBE_TOKEN_NOT_CONFIGURED" }, 503);
-        }
-        if (!tokenOk(request, env, url)) {
-          return json(
-            { jsonrpc: "2.0", id: null, error: { code: -32001, message: "LINJIAN_ERR_BAD_TOKEN" } },
-            401,
-          );
-        }
-        return runHandler(tokenMcpHandler, request, env, ctx, "token-probe");
+      if (!env?.LINJIAN_TOKEN) {
+        return json({ ok: false, error: "PROBE_TOKEN_NOT_CONFIGURED" }, 503);
+      }
+      if (!tokenOk(request, env, url)) {
+        return json(
+          {
+            jsonrpc: "2.0",
+            id: null,
+            error: { code: -32001, message: "LINJIAN_ERR_BAD_TOKEN" },
+          },
+          401,
+        );
       }
 
-      return runHandler(publicMcpHandler, request, env, ctx, "public-probe");
+      try {
+        return await mcpHandler.fetch(request, env, ctx);
+      } catch (error) {
+        console.error("Window probe MCP handler failure", error);
+        return json(
+          {
+            ok: false,
+            stage: "mcp-handler",
+            name: error instanceof Error ? error.name : "Error",
+            message: error instanceof Error ? error.message : String(error),
+          },
+          500,
+        );
+      }
     }
 
     if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) {
