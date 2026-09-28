@@ -6,6 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 [observability]
 enabled = true
 
+[[d1_databases]]
+binding = "DB"
+database_name = "aevren-window"
+database_id = "2d790c4e-da9d-4014-ad8a-297601e04145"
+
 [[durable_objects.bindings]]
 name = "WindowProbeMCP"
 class_name = "WindowProbeMCP"
