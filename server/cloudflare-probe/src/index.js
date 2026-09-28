@@ -1,23 +1,21 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import legacyWorker from "../../cloudflare-worker/worker.js";
 
-const PROBE_VERSION = "0.5.0-compact-bridge";
+const PROBE_VERSION = "0.6.0-split-backend";
 const DEFAULT_DEVICE = "android-phone";
 
 function textResult(payload) {
-  return {
-    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
-  };
+  return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
 }
 
 async function legacyRpcWithEnv(env, method, params = {}) {
   const token = String(env?.LINJIAN_TOKEN || "");
   if (!token) throw new Error("LINJIAN_TOKEN is not configured in probe runtime.");
+  if (!env?.WINDOW_BACKEND) throw new Error("WINDOW_BACKEND service binding is missing.");
 
   const request = new Request(
-    `https://legacy.internal/mcp?token=${encodeURIComponent(token)}`,
+    `https://backend.internal/mcp?token=${encodeURIComponent(token)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -30,13 +28,11 @@ async function legacyRpcWithEnv(env, method, params = {}) {
     },
   );
 
-  const response = await legacyWorker.fetch(request, env);
+  const response = await env.WINDOW_BACKEND.fetch(request);
   const payload = await response.json();
   if (!response.ok || payload?.error) {
     const message =
-      payload?.error?.message ||
-      payload?.error ||
-      `Legacy MCP RPC failed with ${response.status}`;
+      payload?.error?.message || payload?.error || `Legacy MCP RPC failed with ${response.status}`;
     throw new Error(typeof message === "string" ? message : JSON.stringify(message));
   }
   return payload?.result;
@@ -65,7 +61,7 @@ export class WindowProbeMCP extends McpAgent {
     { name: "aevren-window-probe", version: PROBE_VERSION },
     {
       instructions:
-        "掌心窗紧凑桥接：保持已验证可连接的 Cloudflare McpAgent 外壳，不在启动时暴露全部旧工具；通过帮助与通用调用按需复用现有掌心窗业务逻辑。执行控制或修改动作前遵守用户意图与确认要求。",
+        "掌心窗拆分桥接：ChatGPT 只连接轻量 McpAgent 外壳；旧掌心窗业务逻辑运行在独立 backend Worker，通过 Service Binding 按需调用。",
     },
   );
 
@@ -76,11 +72,7 @@ export class WindowProbeMCP extends McpAgent {
         title: "Ping Window Probe",
         description: "验证当前 MCP transport 是否在线。",
         inputSchema: { text: z.string().max(120).optional() },
-        annotations: {
-          readOnlyHint: true,
-          destructiveHint: false,
-          openWorldHint: false,
-        },
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       async ({ text }) =>
         textResult({
@@ -100,36 +92,22 @@ export class WindowProbeMCP extends McpAgent {
         inputSchema: {
           device_id: z.string().min(1).max(80).optional().default(DEFAULT_DEVICE),
         },
-        annotations: {
-          readOnlyHint: true,
-          destructiveHint: false,
-          openWorldHint: false,
-        },
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       async ({ device_id }) => {
         const chosenDevice = String(device_id || DEFAULT_DEVICE).trim() || DEFAULT_DEVICE;
         try {
           if (!this.env?.DB) {
-            return {
-              isError: true,
-              ...textResult({ ok: false, error: "PROBE_DB_BINDING_MISSING" }),
-            };
+            return { isError: true, ...textResult({ ok: false, error: "PROBE_DB_BINDING_MISSING" }) };
           }
           const row = await this.env.DB.prepare(
             "SELECT state_json FROM device_state WHERE device_id=?",
-          )
-            .bind(chosenDevice)
-            .first();
-
+          ).bind(chosenDevice).first();
           let state = null;
           if (row?.state_json) {
-            try {
-              state = JSON.parse(row.state_json);
-            } catch {
-              state = { raw_state_json: String(row.state_json) };
-            }
+            try { state = JSON.parse(row.state_json); }
+            catch { state = { raw_state_json: String(row.state_json) }; }
           }
-
           return textResult({
             ok: true,
             device_id: chosenDevice,
@@ -154,29 +132,20 @@ export class WindowProbeMCP extends McpAgent {
       "window_bridge_stats",
       {
         title: "掌心窗旧工具统计",
-        description: "按需读取旧掌心窗 tools/list，只返回数量和体积统计，不在 MCP 启动时注册全部工具。",
+        description: "通过独立 backend Worker 按需读取旧掌心窗 tools/list，只返回统计。",
         inputSchema: {},
-        annotations: {
-          readOnlyHint: true,
-          destructiveHint: false,
-          openWorldHint: false,
-        },
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       async () => {
         try {
           const tools = await listLegacyTools(this.env);
-          const rows = tools.map((tool) => {
-            const schemaBytes = JSON.stringify(tool?.inputSchema || {}).length;
-            const totalBytes = JSON.stringify(tool || {}).length;
-            return {
-              name: tool?.name || "",
-              schema_bytes: schemaBytes,
-              total_bytes: totalBytes,
-              has_meta: Boolean(tool?._meta),
-              has_annotations: Boolean(tool?.annotations),
-            };
-          });
-          rows.sort((a, b) => b.total_bytes - a.total_bytes);
+          const rows = tools.map((tool) => ({
+            name: tool?.name || "",
+            schema_bytes: JSON.stringify(tool?.inputSchema || {}).length,
+            total_bytes: JSON.stringify(tool || {}).length,
+            has_meta: Boolean(tool?._meta),
+            has_annotations: Boolean(tool?.annotations),
+          })).sort((a, b) => b.total_bytes - a.total_bytes);
           return textResult({
             ok: true,
             tool_count: tools.length,
@@ -202,17 +171,13 @@ export class WindowProbeMCP extends McpAgent {
       "window_action_help",
       {
         title: "查询掌心窗动作",
-        description: "按名称或关键词查询旧掌心窗工具。精确 name 时返回完整 inputSchema；关键词搜索最多返回少量匹配项。",
+        description: "按名称或关键词查询旧掌心窗工具。精确名称返回完整 inputSchema。",
         inputSchema: {
           name: z.string().max(120).optional(),
           query: z.string().max(120).optional(),
           limit: z.number().int().min(1).max(20).optional().default(10),
         },
-        annotations: {
-          readOnlyHint: true,
-          destructiveHint: false,
-          openWorldHint: false,
-        },
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       async ({ name, query, limit }) => {
         try {
@@ -220,31 +185,18 @@ export class WindowProbeMCP extends McpAgent {
           const exact = String(name || "").trim();
           if (exact) {
             const hit = tools.find((tool) => tool?.name === exact);
-            return textResult({
-              ok: true,
-              found: Boolean(hit),
-              tool: hit ? compactTool(hit, true) : null,
-            });
+            return textResult({ ok: true, found: Boolean(hit), tool: hit ? compactTool(hit, true) : null });
           }
-
           const needle = String(query || "").trim().toLowerCase();
-          const max = Number(limit || 10);
           const matches = tools
             .filter((tool) => {
               if (!needle) return true;
               const hay = `${tool?.name || ""} ${tool?.title || ""} ${tool?.description || ""}`.toLowerCase();
               return hay.includes(needle);
             })
-            .slice(0, max)
+            .slice(0, Number(limit || 10))
             .map((tool) => compactTool(tool, false));
-
-          return textResult({
-            ok: true,
-            total_tools: tools.length,
-            query: needle,
-            count: matches.length,
-            tools: matches,
-          });
+          return textResult({ ok: true, total_tools: tools.length, query: needle, count: matches.length, tools: matches });
         } catch (error) {
           return {
             isError: true,
@@ -262,7 +214,7 @@ export class WindowProbeMCP extends McpAgent {
       "window_call",
       {
         title: "调用掌心窗旧动作",
-        description: "通用桥接现有掌心窗 tools/call。可执行读取或控制/修改动作；调用控制或修改动作前必须遵守用户当前意图和相应确认要求。",
+        description: "通过独立 backend Worker 调用现有掌心窗 tools/call。控制或修改动作必须遵守用户当前意图与确认要求。",
         inputSchema: {
           name: z.string().min(1).max(120),
           arguments: z.record(z.string(), z.any()).optional(),
@@ -271,22 +223,10 @@ export class WindowProbeMCP extends McpAgent {
       async ({ name, arguments: args }) => {
         try {
           const tools = await listLegacyTools(this.env);
-          const tool = tools.find((item) => item?.name === name);
-          if (!tool) {
-            return {
-              isError: true,
-              ...textResult({
-                ok: false,
-                error: "UNKNOWN_WINDOW_TOOL",
-                name,
-              }),
-            };
+          if (!tools.some((item) => item?.name === name)) {
+            return { isError: true, ...textResult({ ok: false, error: "UNKNOWN_WINDOW_TOOL", name }) };
           }
-
-          return await legacyRpcWithEnv(this.env, "tools/call", {
-            name,
-            arguments: args || {},
-          });
+          return await legacyRpcWithEnv(this.env, "tools/call", { name, arguments: args || {} });
         } catch (error) {
           return {
             isError: true,
@@ -345,35 +285,17 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
-      let binding = "missing";
-      try {
-        if (env?.WindowProbeMCP) {
-          const id = env.WindowProbeMCP.idFromName("health-check");
-          env.WindowProbeMCP.get(id);
-          binding = "ok";
-        }
-      } catch (error) {
-        binding = `error:${error instanceof Error ? error.message : String(error)}`;
-      }
-
       return Response.json({
         ok: true,
         name: "aevren-window-probe",
         version: PROBE_VERSION,
         runtime: "cloudflare-workers",
         transport: "sessionful-streamable-http",
-        binding,
         db_configured: Boolean(env?.DB),
         kv_configured: Boolean(env?.SCREENSHOT_KV),
         token_configured: Boolean(env?.LINJIAN_TOKEN),
+        backend_configured: Boolean(env?.WINDOW_BACKEND),
         route: "/mcp?token=...",
-        exposed_tools: [
-          "ping_window_probe",
-          "get_phone_state",
-          "window_bridge_stats",
-          "window_action_help",
-          "window_call",
-        ],
       });
     }
 
@@ -381,34 +303,20 @@ export default {
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders() });
       }
-
-      if (!env?.LINJIAN_TOKEN) {
-        return json({ ok: false, error: "PROBE_TOKEN_NOT_CONFIGURED" }, 503);
-      }
+      if (!env?.LINJIAN_TOKEN) return json({ ok: false, error: "PROBE_TOKEN_NOT_CONFIGURED" }, 503);
       if (!tokenOk(request, env, url)) {
-        return json(
-          {
-            jsonrpc: "2.0",
-            id: null,
-            error: { code: -32001, message: "LINJIAN_ERR_BAD_TOKEN" },
-          },
-          401,
-        );
+        return json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "LINJIAN_ERR_BAD_TOKEN" } }, 401);
       }
-
       try {
         return await mcpHandler.fetch(request, env, ctx);
       } catch (error) {
         console.error("Window probe MCP handler failure", error);
-        return json(
-          {
-            ok: false,
-            stage: "mcp-handler",
-            name: error instanceof Error ? error.name : "Error",
-            message: error instanceof Error ? error.message : String(error),
-          },
-          500,
-        );
+        return json({
+          ok: false,
+          stage: "mcp-handler",
+          name: error instanceof Error ? error.name : "Error",
+          message: error instanceof Error ? error.message : String(error),
+        }, 500);
       }
     }
 
@@ -419,10 +327,7 @@ export default {
       });
     }
 
-    if (url.pathname.startsWith("/.well-known/")) {
-      return new Response("Not Found", { status: 404 });
-    }
-
+    if (url.pathname.startsWith("/.well-known/")) return new Response("Not Found", { status: 404 });
     return new Response("Not Found", { status: 404 });
   },
 };
