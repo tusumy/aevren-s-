@@ -1,6 +1,7 @@
 import legacyWorker from "./worker.js";
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
+const MCP_TRANSPORT = "sessionful-shim-v1";
 
 function mcpCorsHeaders(extra = {}) {
   return {
@@ -56,6 +57,15 @@ function json(payload, status = 200, extra = {}) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/mcp-transport") {
+      return json({
+        ok: true,
+        transport: MCP_TRANSPORT,
+        protocol_version: MCP_PROTOCOL_VERSION,
+        token_configured: Boolean(env?.LINJIAN_TOKEN),
+      });
+    }
 
     if (url.pathname !== "/mcp") {
       return legacyWorker.fetch(request, env, ctx);
