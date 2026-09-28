@@ -2,7 +2,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-const PROBE_VERSION = "0.6.0-split-backend";
+const PROBE_VERSION = "0.6.1-session-token-clean";
 const DEFAULT_DEVICE = "android-phone";
 
 function textResult(payload) {
@@ -61,7 +61,7 @@ export class WindowProbeMCP extends McpAgent {
     { name: "aevren-window-probe", version: PROBE_VERSION },
     {
       instructions:
-        "掌心窗拆分桥接：ChatGPT 只连接轻量 McpAgent 外壳；旧掌心窗业务逻辑运行在独立 backend Worker，通过 Service Binding 按需调用。",
+        "掌心窗轻量桥接：ChatGPT 只加载少量路由工具；旧掌心窗业务逻辑通过 Service Binding 按需调用。",
     },
   );
 
@@ -132,7 +132,7 @@ export class WindowProbeMCP extends McpAgent {
       "window_bridge_stats",
       {
         title: "掌心窗旧工具统计",
-        description: "通过独立 backend Worker 按需读取旧掌心窗 tools/list，只返回统计。",
+        description: "按需读取旧掌心窗 tools/list，只返回统计。",
         inputSchema: {},
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
@@ -214,7 +214,7 @@ export class WindowProbeMCP extends McpAgent {
       "window_call",
       {
         title: "调用掌心窗旧动作",
-        description: "通过独立 backend Worker 调用现有掌心窗 tools/call。控制或修改动作必须遵守用户当前意图与确认要求。",
+        description: "通过内部 backend 调用现有掌心窗 tools/call。控制或修改动作必须遵守用户当前意图与确认要求。",
         inputSchema: {
           name: z.string().min(1).max(120),
           arguments: z.record(z.string(), z.any()).optional(),
@@ -280,17 +280,35 @@ function json(payload, status = 200) {
   });
 }
 
+function cleanMcpRequest(request) {
+  const cleanUrl = new URL(request.url);
+  cleanUrl.search = "";
+  return new Request(cleanUrl.toString(), request);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
+      let mcpBinding = "missing";
+      try {
+        if (env?.WindowProbeMCP) {
+          const id = env.WindowProbeMCP.idFromName("health-check");
+          env.WindowProbeMCP.get(id);
+          mcpBinding = "ok";
+        }
+      } catch (error) {
+        mcpBinding = `error:${error instanceof Error ? error.message : String(error)}`;
+      }
+
       return Response.json({
         ok: true,
         name: "aevren-window-probe",
         version: PROBE_VERSION,
         runtime: "cloudflare-workers",
         transport: "sessionful-streamable-http",
+        mcp_binding: mcpBinding,
         db_configured: Boolean(env?.DB),
         kv_configured: Boolean(env?.SCREENSHOT_KV),
         token_configured: Boolean(env?.LINJIAN_TOKEN),
@@ -304,11 +322,14 @@ export default {
         return new Response(null, { status: 204, headers: corsHeaders() });
       }
       if (!env?.LINJIAN_TOKEN) return json({ ok: false, error: "PROBE_TOKEN_NOT_CONFIGURED" }, 503);
-      if (!tokenOk(request, env, url)) {
+
+      const hasSession = Boolean(request.headers.get("Mcp-Session-Id"));
+      if (!hasSession && !tokenOk(request, env, url)) {
         return json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "LINJIAN_ERR_BAD_TOKEN" } }, 401);
       }
+
       try {
-        return await mcpHandler.fetch(request, env, ctx);
+        return await mcpHandler.fetch(cleanMcpRequest(request), env, ctx);
       } catch (error) {
         console.error("Window probe MCP handler failure", error);
         return json({
