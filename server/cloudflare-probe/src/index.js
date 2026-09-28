@@ -2,7 +2,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-const PROBE_VERSION = "0.6.1-session-token-clean";
+const PROBE_VERSION = "0.6.2-path-token";
 const DEFAULT_DEVICE = "android-phone";
 
 function textResult(payload) {
@@ -255,6 +255,13 @@ function corsHeaders() {
   };
 }
 
+function pathToken(url) {
+  const prefix = "/mcp/";
+  if (!url.pathname.startsWith(prefix)) return "";
+  try { return decodeURIComponent(url.pathname.slice(prefix.length)); }
+  catch { return ""; }
+}
+
 function tokenOk(request, env, url) {
   const expected = String(env?.LINJIAN_TOKEN || "");
   if (!expected) return false;
@@ -264,6 +271,7 @@ function tokenOk(request, env, url) {
     request.headers.get("X-Auth-Token") ||
     request.headers.get("X-Linjian-Token") ||
     bearer ||
+    pathToken(url) ||
     url.searchParams.get("token") ||
     "";
   return supplied === expected;
@@ -282,6 +290,7 @@ function json(payload, status = 200) {
 
 function cleanMcpRequest(request) {
   const cleanUrl = new URL(request.url);
+  cleanUrl.pathname = "/mcp";
   cleanUrl.search = "";
   return new Request(cleanUrl.toString(), request);
 }
@@ -313,11 +322,12 @@ export default {
         kv_configured: Boolean(env?.SCREENSHOT_KV),
         token_configured: Boolean(env?.LINJIAN_TOKEN),
         backend_configured: Boolean(env?.WINDOW_BACKEND),
-        route: "/mcp?token=...",
+        route: "/mcp/<LINJIAN_TOKEN>",
       });
     }
 
-    if (url.pathname === "/mcp") {
+    const isMcpRoute = url.pathname === "/mcp" || url.pathname.startsWith("/mcp/");
+    if (isMcpRoute) {
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders() });
       }
