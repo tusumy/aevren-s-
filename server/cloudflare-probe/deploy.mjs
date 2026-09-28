@@ -13,31 +13,18 @@ if ((install.status ?? 1) !== 0) process.exit(install.status ?? 1);
 const token = process.env.LINJIAN_TOKEN || "";
 let secretsPath = "";
 
-function deploy(label, extraArgs = []) {
-  console.log(`=== Deploying ${label} ===`);
-  const args = ["wrangler", "deploy", "--config", "wrangler.toml", ...extraArgs];
-  if (secretsPath) args.push("--secrets-file", secretsPath);
-  const result = spawnSync("npx", args, { stdio: "inherit", env: process.env });
-  return result.status ?? 1;
-}
-
 try {
   if (token) {
     secretsPath = join(tmpdir(), `aevren-window-probe-secrets-${process.pid}.json`);
     writeFileSync(secretsPath, JSON.stringify({ LINJIAN_TOKEN: token }), { mode: 0o600 });
   }
 
-  // Workers Builds requires the connected Worker name to match the base
-  // Wrangler name. Use a Wrangler environment for the sibling backend so
-  // Cloudflare accepts the aevren-window-probe-backend suffix.
-  const backendStatus = deploy(
-    "aevren-window-probe-backend",
-    ["--env", "backend"],
-  );
-  if (backendStatus !== 0) process.exit(backendStatus);
+  console.log("=== Deploying aevren-window-probe ===");
+  const args = ["wrangler", "deploy", "--config", "wrangler.toml"];
+  if (secretsPath) args.push("--secrets-file", secretsPath);
 
-  const probeStatus = deploy("aevren-window-probe");
-  process.exitCode = probeStatus;
+  const result = spawnSync("npx", args, { stdio: "inherit", env: process.env });
+  process.exitCode = result.status ?? 1;
 } finally {
   if (secretsPath) {
     try { unlinkSync(secretsPath); } catch {}
