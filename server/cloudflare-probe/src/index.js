@@ -2,12 +2,20 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+const DEFAULT_DEVICE = "android-phone";
+
+function textResult(payload) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+  };
+}
+
 export class WindowProbeMCP extends McpAgent {
   server = new McpServer(
-    { name: "aevren-window-probe", version: "0.2.0" },
+    { name: "aevren-window-probe", version: "0.3.0" },
     {
       instructions:
-        "Minimal isolated MCP probe used only to verify ChatGPT ↔ Cloudflare MCP connectivity.",
+        "Isolated MCP probe used to rebuild 掌心窗 one verified layer at a time.",
     },
   );
 
@@ -26,19 +34,72 @@ export class WindowProbeMCP extends McpAgent {
           openWorldHint: false,
         },
       },
-      async ({ text }) => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              ok: true,
-              service: "aevren-window-probe",
-              echo: text || "pong",
-              at: new Date().toISOString(),
+      async ({ text }) =>
+        textResult({
+          ok: true,
+          service: "aevren-window-probe",
+          echo: text || "pong",
+          at: new Date().toISOString(),
+        }),
+    );
+
+    this.server.registerTool(
+      "get_phone_state",
+      {
+        title: "读取手机最近状态",
+        description: "从掌心窗现有 D1 device_state 表读取手机最近一次上报状态。只读，不下发任何控制命令。",
+        inputSchema: {
+          device_id: z.string().min(1).max(80).optional().default(DEFAULT_DEVICE),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ device_id }) => {
+        const chosenDevice = String(device_id || DEFAULT_DEVICE).trim() || DEFAULT_DEVICE;
+        try {
+          if (!this.env?.DB) {
+            return {
+              isError: true,
+              ...textResult({ ok: false, error: "PROBE_DB_BINDING_MISSING" }),
+            };
+          }
+
+          const row = await this.env.DB.prepare(
+            "SELECT state_json FROM device_state WHERE device_id=?",
+          )
+            .bind(chosenDevice)
+            .first();
+
+          let state = null;
+          if (row?.state_json) {
+            try {
+              state = JSON.parse(row.state_json);
+            } catch {
+              state = { raw_state_json: String(row.state_json) };
+            }
+          }
+
+          return textResult({
+            ok: true,
+            device_id: chosenDevice,
+            state,
+            life_state: state,
+            source: "probe_d1_device_state",
+          });
+        } catch (error) {
+          return {
+            isError: true,
+            ...textResult({
+              ok: false,
+              error: "PROBE_DB_READ_FAILED",
+              message: error instanceof Error ? error.message : String(error),
             }),
-          },
-        ],
-      }),
+          };
+        }
+      },
     );
   }
 }
@@ -117,11 +178,13 @@ export default {
       return Response.json({
         ok: true,
         name: "aevren-window-probe",
-        version: "0.2.0",
+        version: "0.3.0",
         runtime: "cloudflare-workers",
         transport: "sessionful-streamable-http",
         binding,
+        db_configured: Boolean(env?.DB),
         token_configured: Boolean(env?.LINJIAN_TOKEN),
+        tools: ["ping_window_probe", "get_phone_state"],
         routes: {
           public: "/mcp",
           token: "/mcp-token?token=...",
