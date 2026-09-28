@@ -13,31 +13,11 @@ if ((install.status ?? 1) !== 0) process.exit(install.status ?? 1);
 const token = process.env.LINJIAN_TOKEN || "";
 let secretsPath = "";
 
-function deploy(config, name, { allowCiNameOverride = true } = {}) {
-  const childEnv = { ...process.env };
-
-  // Cloudflare Workers Builds injects WRANGLER_CI_OVERRIDE_NAME for the
-  // connected project. That override wins over the name in wrangler.toml
-  // and can even defeat --name. Remove it only for the sidecar backend,
-  // otherwise Wrangler tries to upload backend code into aevren-window-probe
-  // and Cloudflare rejects it because backend code does not export
-  // WindowProbeMCP, which owns the existing Durable Object namespace.
-  if (!allowCiNameOverride) {
-    delete childEnv.WRANGLER_CI_OVERRIDE_NAME;
-  }
-
-  const args = [
-    "wrangler",
-    "deploy",
-    "--config",
-    config,
-    "--name",
-    name,
-  ];
+function deploy(label, extraArgs = []) {
+  console.log(`=== Deploying ${label} ===`);
+  const args = ["wrangler", "deploy", "--config", "wrangler.toml", ...extraArgs];
   if (secretsPath) args.push("--secrets-file", secretsPath);
-
-  console.log(`\n=== Deploying ${name} with ${config} ===`);
-  const result = spawnSync("npx", args, { stdio: "inherit", env: childEnv });
+  const result = spawnSync("npx", args, { stdio: "inherit", env: process.env });
   return result.status ?? 1;
 }
 
@@ -47,22 +27,16 @@ try {
     writeFileSync(secretsPath, JSON.stringify({ LINJIAN_TOKEN: token }), { mode: 0o600 });
   }
 
-  // Deploy the backend with the CI name override removed, so it is created as
-  // its own Worker instead of overwriting the Git-connected probe Worker.
+  // Workers Builds requires the connected Worker name to match the base
+  // Wrangler name. Use a Wrangler environment for the sibling backend so
+  // Cloudflare accepts the aevren-window-probe-backend suffix.
   const backendStatus = deploy(
-    "wrangler.backend.toml",
     "aevren-window-probe-backend",
-    { allowCiNameOverride: false },
+    ["--env", "backend"],
   );
   if (backendStatus !== 0) process.exit(backendStatus);
 
-  // The front MCP shell is the Git-connected Worker, so keeping Cloudflare's
-  // CI name override here is correct and should resolve to aevren-window-probe.
-  const probeStatus = deploy(
-    "wrangler.toml",
-    "aevren-window-probe",
-    { allowCiNameOverride: true },
-  );
+  const probeStatus = deploy("aevren-window-probe");
   process.exitCode = probeStatus;
 } finally {
   if (secretsPath) {
