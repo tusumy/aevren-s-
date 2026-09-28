@@ -13,24 +13,26 @@ if ((install.status ?? 1) !== 0) process.exit(install.status ?? 1);
 const token = process.env.LINJIAN_TOKEN || "";
 let secretsPath = "";
 
-try {
-  const args = ["wrangler", "deploy", "--config", "wrangler.toml"];
+function deploy(config) {
+  const args = ["wrangler", "deploy", "--config", config];
+  if (secretsPath) args.push("--secrets-file", secretsPath);
+  const result = spawnSync("npx", args, { stdio: "inherit", env: process.env });
+  return result.status ?? 1;
+}
 
+try {
   if (token) {
     secretsPath = join(tmpdir(), `aevren-window-probe-secrets-${process.pid}.json`);
     writeFileSync(secretsPath, JSON.stringify({ LINJIAN_TOKEN: token }), { mode: 0o600 });
-    args.push("--secrets-file", secretsPath);
   }
 
-  const deploy = spawnSync("npx", args, {
-    stdio: "inherit",
-    env: process.env,
-  });
-  process.exitCode = deploy.status ?? 1;
+  const backendStatus = deploy("wrangler.backend.toml");
+  if (backendStatus !== 0) process.exit(backendStatus);
+
+  const probeStatus = deploy("wrangler.toml");
+  process.exitCode = probeStatus;
 } finally {
   if (secretsPath) {
-    try {
-      unlinkSync(secretsPath);
-    } catch {}
+    try { unlinkSync(secretsPath); } catch {}
   }
 }
