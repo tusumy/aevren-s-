@@ -9,6 +9,15 @@ if (!token) {
   process.exit(1);
 }
 
+const install = spawnSync(
+  "npm",
+  ["install", "--no-audit", "--no-fund"],
+  { stdio: "inherit", env: process.env },
+);
+if ((install.status ?? 1) !== 0) {
+  process.exit(install.status ?? 1);
+}
+
 const secretsPath = join(tmpdir(), `aevren-window-secrets-${process.pid}.json`);
 writeFileSync(secretsPath, JSON.stringify({ LINJIAN_TOKEN: token }), { mode: 0o600 });
 
