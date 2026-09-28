@@ -2,11 +2,45 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-const PROBE_VERSION = "0.6.3-backend-accept";
+const PROBE_VERSION = "0.6.4-backend-sse";
 const DEFAULT_DEVICE = "android-phone";
 
 function textResult(payload) {
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
+}
+
+async function parseLegacyRpcResponse(response) {
+  const raw = await response.text();
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  const looksLikeSse =
+    contentType.includes("text/event-stream") ||
+    raw.trimStart().startsWith("event:") ||
+    /(^|\n)data:/m.test(raw);
+
+  if (!looksLikeSse) {
+    try { return JSON.parse(raw); }
+    catch (error) {
+      throw new Error(`Legacy MCP returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const events = raw.split(/\r?\n\r?\n/);
+  let lastError = null;
+  for (const event of events) {
+    const data = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+    if (!data || data === "[DONE]") continue;
+    try { return JSON.parse(data); }
+    catch (error) { lastError = error; }
+  }
+
+  throw new Error(
+    `Legacy MCP returned unreadable SSE payload${lastError ? `: ${lastError instanceof Error ? lastError.message : String(lastError)}` : ""}`,
+  );
 }
 
 async function legacyRpcWithEnv(env, method, params = {}) {
@@ -32,7 +66,7 @@ async function legacyRpcWithEnv(env, method, params = {}) {
   );
 
   const response = await env.WINDOW_BACKEND.fetch(request);
-  const payload = await response.json();
+  const payload = await parseLegacyRpcResponse(response);
   if (!response.ok || payload?.error) {
     const message =
       payload?.error?.message || payload?.error || `Legacy MCP RPC failed with ${response.status}`;
