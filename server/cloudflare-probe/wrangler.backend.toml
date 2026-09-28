@@ -1,0 +1,16 @@
+name = "aevren-window-probe-backend"
+main = "../cloudflare-worker/worker.js"
+compatibility_date = "2026-09-27"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aevren-window"
+database_id = "2d790c4e-da9d-4014-ad8a-297601e04145"
+
+[[kv_namespaces]]
+binding = "SCREENSHOT_KV"
+id = "e55c3e7a759149448f6f1e223f302783"
