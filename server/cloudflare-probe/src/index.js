@@ -2,7 +2,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-const PROBE_VERSION = "0.6.2-path-token";
+const PROBE_VERSION = "0.6.3-backend-accept";
 const DEFAULT_DEVICE = "android-phone";
 
 function textResult(payload) {
@@ -18,7 +18,10 @@ async function legacyRpcWithEnv(env, method, params = {}) {
     `https://backend.internal/mcp?token=${encodeURIComponent(token)}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+      },
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: crypto.randomUUID(),
