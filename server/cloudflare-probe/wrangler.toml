@@ -19,6 +19,10 @@ id = "e55c3e7a759149448f6f1e223f302783"
 binding = "WINDOW_BACKEND"
 service = "aevren-window"
 
+[[services]]
+binding = "TOY_BACKEND"
+service = "aevren-toy"
+
 [[durable_objects.bindings]]
 name = "WindowProbeMCP"
 class_name = "WindowProbeMCP"
