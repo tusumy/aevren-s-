@@ -3,81 +3,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import legacyWorker from "../../cloudflare-worker/worker.js";
 
-const PROBE_VERSION = "0.4.0-full-bridge";
+const PROBE_VERSION = "0.5.0-compact-bridge";
+const DEFAULT_DEVICE = "android-phone";
 
 function textResult(payload) {
   return {
     content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
   };
-}
-
-function zodForSchema(schema = {}) {
-  if (Object.prototype.hasOwnProperty.call(schema || {}, "const")) {
-    return z.literal(schema.const);
-  }
-
-  if (Array.isArray(schema?.enum) && schema.enum.length) {
-    const values = schema.enum;
-    if (values.every((value) => typeof value === "string")) {
-      return z.enum(values);
-    }
-    return z.union(values.map((value) => z.literal(value)));
-  }
-
-  const variants = schema?.anyOf || schema?.oneOf;
-  if (Array.isArray(variants) && variants.length) {
-    const converted = variants.map((part) => zodForSchema(part || {}));
-    return converted.length === 1 ? converted[0] : z.union(converted);
-  }
-
-  const rawType = schema?.type;
-  const types = Array.isArray(rawType) ? rawType : [rawType || "string"];
-  const nullable = types.includes("null");
-  const type = types.find((value) => value !== "null") || "string";
-
-  let out;
-  if (type === "string") out = z.string();
-  else if (type === "integer") out = z.number().int();
-  else if (type === "number") out = z.number();
-  else if (type === "boolean") out = z.boolean();
-  else if (type === "array") out = z.array(zodForSchema(schema.items || {}));
-  else if (type === "object") {
-    const properties = schema.properties || {};
-    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
-    const shape = {};
-    for (const [key, childSchema] of Object.entries(properties)) {
-      let child = zodForSchema(childSchema || {});
-      if (Object.prototype.hasOwnProperty.call(childSchema || {}, "default")) {
-        child = child.default(childSchema.default);
-      } else if (!required.has(key)) {
-        child = child.optional();
-      }
-      shape[key] = child;
-    }
-    out = z.object(shape);
-    if (schema.additionalProperties === true) out = out.passthrough();
-  } else {
-    out = z.any();
-  }
-
-  if (nullable) out = out.nullable();
-  return out;
-}
-
-function rootShape(schema = {}) {
-  const properties = schema?.properties || {};
-  const required = new Set(Array.isArray(schema?.required) ? schema.required : []);
-  const shape = {};
-  for (const [key, childSchema] of Object.entries(properties)) {
-    let child = zodForSchema(childSchema || {});
-    if (Object.prototype.hasOwnProperty.call(childSchema || {}, "default")) {
-      child = child.default(childSchema.default);
-    } else if (!required.has(key)) {
-      child = child.optional();
-    }
-    shape[key] = child;
-  }
-  return shape;
 }
 
 async function legacyRpcWithEnv(env, method, params = {}) {
@@ -110,21 +42,30 @@ async function legacyRpcWithEnv(env, method, params = {}) {
   return payload?.result;
 }
 
-export class WindowProbeMCP extends McpAgent {
-  bridgeStatus = {
-    initialized: false,
-    tool_count: 0,
-    resource_count: 0,
-    tool_errors: [],
-    resource_errors: [],
-    fatal_error: "",
-  };
+async function listLegacyTools(env) {
+  const listed = await legacyRpcWithEnv(env, "tools/list");
+  return Array.isArray(listed?.tools) ? listed.tools : [];
+}
 
+function compactTool(tool, includeSchema = false) {
+  const out = {
+    name: tool?.name || "",
+    title: tool?.title || "",
+    description: tool?.description || "",
+  };
+  if (includeSchema) {
+    out.inputSchema = tool?.inputSchema || { type: "object", properties: {} };
+    out.annotations = tool?.annotations || null;
+  }
+  return out;
+}
+
+export class WindowProbeMCP extends McpAgent {
   server = new McpServer(
     { name: "aevren-window-probe", version: PROBE_VERSION },
     {
       instructions:
-        "掌心窗验证外壳：使用已经验证可连接的 Cloudflare McpAgent transport，整块复用现有掌心窗业务工具。",
+        "掌心窗紧凑桥接：保持已验证可连接的 Cloudflare McpAgent 外壳，不在启动时暴露全部旧工具；通过帮助与通用调用按需复用现有掌心窗业务逻辑。执行控制或修改动作前遵守用户意图与确认要求。",
     },
   );
 
@@ -133,7 +74,7 @@ export class WindowProbeMCP extends McpAgent {
       "ping_window_probe",
       {
         title: "Ping Window Probe",
-        description: "Return a tiny success payload from the verified MCP transport.",
+        description: "验证当前 MCP transport 是否在线。",
         inputSchema: { text: z.string().max(120).optional() },
         annotations: {
           readOnlyHint: true,
@@ -152,10 +93,68 @@ export class WindowProbeMCP extends McpAgent {
     );
 
     this.server.registerTool(
-      "probe_bridge_status",
+      "get_phone_state",
       {
-        title: "掌心窗桥接状态",
-        description: "只读查看本次探针启动时批量桥接旧掌心窗工具和资源的结果。",
+        title: "读取手机最近状态",
+        description: "从现有掌心窗 D1 读取手机最近一次上报状态。只读。",
+        inputSchema: {
+          device_id: z.string().min(1).max(80).optional().default(DEFAULT_DEVICE),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ device_id }) => {
+        const chosenDevice = String(device_id || DEFAULT_DEVICE).trim() || DEFAULT_DEVICE;
+        try {
+          if (!this.env?.DB) {
+            return {
+              isError: true,
+              ...textResult({ ok: false, error: "PROBE_DB_BINDING_MISSING" }),
+            };
+          }
+          const row = await this.env.DB.prepare(
+            "SELECT state_json FROM device_state WHERE device_id=?",
+          )
+            .bind(chosenDevice)
+            .first();
+
+          let state = null;
+          if (row?.state_json) {
+            try {
+              state = JSON.parse(row.state_json);
+            } catch {
+              state = { raw_state_json: String(row.state_json) };
+            }
+          }
+
+          return textResult({
+            ok: true,
+            device_id: chosenDevice,
+            state,
+            life_state: state,
+            source: "probe_d1_device_state",
+          });
+        } catch (error) {
+          return {
+            isError: true,
+            ...textResult({
+              ok: false,
+              error: "PROBE_DB_READ_FAILED",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          };
+        }
+      },
+    );
+
+    this.server.registerTool(
+      "window_bridge_stats",
+      {
+        title: "掌心窗旧工具统计",
+        description: "按需读取旧掌心窗 tools/list，只返回数量和体积统计，不在 MCP 启动时注册全部工具。",
         inputSchema: {},
         annotations: {
           readOnlyHint: true,
@@ -163,96 +162,144 @@ export class WindowProbeMCP extends McpAgent {
           openWorldHint: false,
         },
       },
-      async () => textResult(this.bridgeStatus),
+      async () => {
+        try {
+          const tools = await listLegacyTools(this.env);
+          const rows = tools.map((tool) => {
+            const schemaBytes = JSON.stringify(tool?.inputSchema || {}).length;
+            const totalBytes = JSON.stringify(tool || {}).length;
+            return {
+              name: tool?.name || "",
+              schema_bytes: schemaBytes,
+              total_bytes: totalBytes,
+              has_meta: Boolean(tool?._meta),
+              has_annotations: Boolean(tool?.annotations),
+            };
+          });
+          rows.sort((a, b) => b.total_bytes - a.total_bytes);
+          return textResult({
+            ok: true,
+            tool_count: tools.length,
+            tools_json_bytes: JSON.stringify(tools).length,
+            tools_with_meta: rows.filter((row) => row.has_meta).length,
+            tools_with_annotations: rows.filter((row) => row.has_annotations).length,
+            largest_tools: rows.slice(0, 20),
+          });
+        } catch (error) {
+          return {
+            isError: true,
+            ...textResult({
+              ok: false,
+              error: "LEGACY_TOOL_STATS_FAILED",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          };
+        }
+      },
     );
 
-    try {
-      const listed = await legacyRpcWithEnv(this.env, "tools/list");
-      const tools = Array.isArray(listed?.tools) ? listed.tools : [];
-
-      for (const tool of tools) {
+    this.server.registerTool(
+      "window_action_help",
+      {
+        title: "查询掌心窗动作",
+        description: "按名称或关键词查询旧掌心窗工具。精确 name 时返回完整 inputSchema；关键词搜索最多返回少量匹配项。",
+        inputSchema: {
+          name: z.string().max(120).optional(),
+          query: z.string().max(120).optional(),
+          limit: z.number().int().min(1).max(20).optional().default(10),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ name, query, limit }) => {
         try {
-          this.server.registerTool(
-            tool.name,
-            {
-              title: tool.title,
-              description: tool.description || "",
-              inputSchema: rootShape(
-                tool.inputSchema || { type: "object", properties: {} },
-              ),
-              annotations: tool.annotations,
-              _meta: tool._meta,
-            },
-            async (args) => {
-              try {
-                return await legacyRpcWithEnv(this.env, "tools/call", {
-                  name: tool.name,
-                  arguments: args || {},
-                });
-              } catch (error) {
-                return {
-                  isError: true,
-                  content: [
-                    {
-                      type: "text",
-                      text: error instanceof Error ? error.message : String(error),
-                    },
-                  ],
-                };
-              }
-            },
-          );
-          this.bridgeStatus.tool_count += 1;
-        } catch (error) {
-          this.bridgeStatus.tool_errors.push({
-            name: tool?.name || "unknown",
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
-      try {
-        const listedResources = await legacyRpcWithEnv(this.env, "resources/list");
-        const resources = Array.isArray(listedResources?.resources)
-          ? listedResources.resources
-          : [];
-
-        for (const resource of resources) {
-          try {
-            this.server.registerResource(
-              resource.name || resource.uri,
-              resource.uri,
-              {
-                title: resource.name || resource.uri,
-                description: resource.description || "",
-                mimeType: resource.mimeType,
-              },
-              async () =>
-                legacyRpcWithEnv(this.env, "resources/read", {
-                  uri: resource.uri,
-                }),
-            );
-            this.bridgeStatus.resource_count += 1;
-          } catch (error) {
-            this.bridgeStatus.resource_errors.push({
-              uri: resource?.uri || "unknown",
-              message: error instanceof Error ? error.message : String(error),
+          const tools = await listLegacyTools(this.env);
+          const exact = String(name || "").trim();
+          if (exact) {
+            const hit = tools.find((tool) => tool?.name === exact);
+            return textResult({
+              ok: true,
+              found: Boolean(hit),
+              tool: hit ? compactTool(hit, true) : null,
             });
           }
-        }
-      } catch (error) {
-        this.bridgeStatus.resource_errors.push({
-          uri: "resources/list",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
 
-      this.bridgeStatus.initialized = true;
-    } catch (error) {
-      this.bridgeStatus.fatal_error =
-        error instanceof Error ? error.message : String(error);
-      console.error("Probe legacy bridge initialization failed", error);
-    }
+          const needle = String(query || "").trim().toLowerCase();
+          const max = Number(limit || 10);
+          const matches = tools
+            .filter((tool) => {
+              if (!needle) return true;
+              const hay = `${tool?.name || ""} ${tool?.title || ""} ${tool?.description || ""}`.toLowerCase();
+              return hay.includes(needle);
+            })
+            .slice(0, max)
+            .map((tool) => compactTool(tool, false));
+
+          return textResult({
+            ok: true,
+            total_tools: tools.length,
+            query: needle,
+            count: matches.length,
+            tools: matches,
+          });
+        } catch (error) {
+          return {
+            isError: true,
+            ...textResult({
+              ok: false,
+              error: "LEGACY_TOOL_HELP_FAILED",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          };
+        }
+      },
+    );
+
+    this.server.registerTool(
+      "window_call",
+      {
+        title: "调用掌心窗旧动作",
+        description: "通用桥接现有掌心窗 tools/call。可执行读取或控制/修改动作；调用控制或修改动作前必须遵守用户当前意图和相应确认要求。",
+        inputSchema: {
+          name: z.string().min(1).max(120),
+          arguments: z.record(z.string(), z.any()).optional(),
+        },
+      },
+      async ({ name, arguments: args }) => {
+        try {
+          const tools = await listLegacyTools(this.env);
+          const tool = tools.find((item) => item?.name === name);
+          if (!tool) {
+            return {
+              isError: true,
+              ...textResult({
+                ok: false,
+                error: "UNKNOWN_WINDOW_TOOL",
+                name,
+              }),
+            };
+          }
+
+          return await legacyRpcWithEnv(this.env, "tools/call", {
+            name,
+            arguments: args || {},
+          });
+        } catch (error) {
+          return {
+            isError: true,
+            ...textResult({
+              ok: false,
+              error: "LEGACY_TOOL_CALL_FAILED",
+              name,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          };
+        }
+      },
+    );
   }
 }
 
@@ -320,6 +367,13 @@ export default {
         kv_configured: Boolean(env?.SCREENSHOT_KV),
         token_configured: Boolean(env?.LINJIAN_TOKEN),
         route: "/mcp?token=...",
+        exposed_tools: [
+          "ping_window_probe",
+          "get_phone_state",
+          "window_bridge_stats",
+          "window_action_help",
+          "window_call",
+        ],
       });
     }
 
