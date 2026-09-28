@@ -1,9 +1,12 @@
 import { McpAgent } from "agents/mcp";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createMcpHandler } from "agents/mcp/server";
+import { McpServer as LegacyMcpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer as StatelessMcpServer } from "@modelcontextprotocol/server";
+import { env as workerEnv } from "cloudflare:workers";
 import { z } from "zod";
 import legacyWorker from "./worker.js";
 
-const MCP_TRANSPORT = "sessionful-mcpagent-v1";
+const MCP_TRANSPORT = "stateless-createMcpHandler-v2";
 const MCP_SERVER_VERSION = "0.3.8.12-cf";
 
 function mcpCorsHeaders() {
@@ -96,8 +99,29 @@ function rootShape(schema = {}) {
   return shape;
 }
 
-export class WindowMCP extends McpAgent {
-  server = new McpServer(
+async function legacyRpcWithEnv(env, method, params = {}) {
+  const token = String(env?.LINJIAN_TOKEN || "");
+  if (!token) throw new Error("LINJIAN_TOKEN is not configured in runtime.");
+
+  const request = new Request(
+    `https://legacy.internal/mcp?token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method, params }),
+    },
+  );
+  const response = await legacyWorker.fetch(request, env);
+  const payload = await response.json();
+  if (!response.ok || payload?.error) {
+    const message = payload?.error?.message || payload?.error || `Legacy MCP RPC failed with ${response.status}`;
+    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+  }
+  return payload?.result;
+}
+
+async function createStatelessServer() {
+  const server = new StatelessMcpServer(
     { name: "aevren-window", version: MCP_SERVER_VERSION },
     {
       instructions:
@@ -105,102 +129,83 @@ export class WindowMCP extends McpAgent {
     },
   );
 
-  async legacyRpc(method, params = {}) {
-    const token = String(this.env?.LINJIAN_TOKEN || "");
-    if (!token) throw new Error("LINJIAN_TOKEN is not configured in WindowMCP runtime.");
-
-    const request = new Request(
-      `https://legacy.internal/mcp?token=${encodeURIComponent(token)}`,
+  const listed = await legacyRpcWithEnv(workerEnv, "tools/list");
+  const tools = Array.isArray(listed?.tools) ? listed.tools : [];
+  for (const tool of tools) {
+    server.registerTool(
+      tool.name,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method, params }),
+        title: tool.title,
+        description: tool.description || "",
+        inputSchema: rootShape(tool.inputSchema || { type: "object", properties: {} }),
+        annotations: tool.annotations,
+        _meta: tool._meta,
+      },
+      async (args) => {
+        try {
+          return await legacyRpcWithEnv(workerEnv, "tools/call", {
+            name: tool.name,
+            arguments: args || {},
+          });
+        } catch (error) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: error instanceof Error ? error.message : String(error),
+              },
+            ],
+          };
+        }
       },
     );
-    const response = await legacyWorker.fetch(request, this.env);
-    const payload = await response.json();
-    if (!response.ok || payload?.error) {
-      const message = payload?.error?.message || payload?.error || `Legacy MCP RPC failed with ${response.status}`;
-      throw new Error(typeof message === "string" ? message : JSON.stringify(message));
-    }
-    return payload?.result;
   }
 
-  async init() {
-    const listed = await this.legacyRpc("tools/list");
-    const tools = Array.isArray(listed?.tools) ? listed.tools : [];
-
-    for (const tool of tools) {
-      this.server.registerTool(
-        tool.name,
-        {
-          title: tool.title,
-          description: tool.description || "",
-          inputSchema: rootShape(tool.inputSchema || { type: "object", properties: {} }),
-          annotations: tool.annotations,
-          _meta: tool._meta,
-        },
-        async (args) => {
-          try {
-            const result = await this.legacyRpc("tools/call", {
-              name: tool.name,
-              arguments: args || {},
-            });
-            return result;
-          } catch (error) {
-            return {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: error instanceof Error ? error.message : String(error),
-                },
-              ],
-            };
-          }
-        },
-      );
-    }
-
-    const listedResources = await this.legacyRpc("resources/list");
-    const resources = Array.isArray(listedResources?.resources) ? listedResources.resources : [];
-    for (const resource of resources) {
-      this.server.registerResource(
-        resource.name || resource.uri,
-        resource.uri,
-        {
-          title: resource.name || resource.uri,
-          description: resource.description || "",
-          mimeType: resource.mimeType,
-        },
-        async () => this.legacyRpc("resources/read", { uri: resource.uri }),
-      );
-    }
+  const listedResources = await legacyRpcWithEnv(workerEnv, "resources/list");
+  const resources = Array.isArray(listedResources?.resources) ? listedResources.resources : [];
+  for (const resource of resources) {
+    server.registerResource(
+      resource.name || resource.uri,
+      resource.uri,
+      {
+        title: resource.name || resource.uri,
+        description: resource.description || "",
+        mimeType: resource.mimeType,
+      },
+      async () => legacyRpcWithEnv(workerEnv, "resources/read", { uri: resource.uri }),
+    );
   }
+
+  return server;
 }
 
-const mcpHandler = WindowMCP.serve("/mcp", { binding: "WindowMCP" });
+const statelessHandler = createMcpHandler(createStatelessServer, {
+  route: "/mcp",
+  legacy: "stateless",
+  responseMode: "auto",
+  onerror(error) {
+    console.error("stateless MCP handler failure", error);
+  },
+});
+
+// Keep the old Durable Object class exported for the already-created binding/migration.
+// The public /mcp route below no longer uses it.
+export class WindowMCP extends McpAgent {
+  server = new LegacyMcpServer({ name: "aevren-window-legacy", version: MCP_SERVER_VERSION });
+  async init() {}
+}
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/mcp-transport") {
-      let binding = "missing";
-      try {
-        if (env?.WindowMCP) {
-          const id = env.WindowMCP.idFromName("health-check");
-          env.WindowMCP.get(id);
-          binding = "ok";
-        }
-      } catch (error) {
-        binding = `error:${error instanceof Error ? error.message : String(error)}`;
-      }
       return json({
         ok: true,
         transport: MCP_TRANSPORT,
         token_configured: Boolean(env?.LINJIAN_TOKEN),
-        durable_object_binding: binding,
+        old_render_transport: "stateless-streamable-http",
       });
     }
 
@@ -208,11 +213,7 @@ export default {
       return legacyWorker.fetch(request, env, ctx);
     }
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: mcpCorsHeaders() });
-    }
-
-    if (!tokenOk(request, env, url)) {
+    if (request.method !== "OPTIONS" && !tokenOk(request, env, url)) {
       return json(
         { jsonrpc: "2.0", id: null, error: { code: -32001, message: "LINJIAN_ERR_BAD_TOKEN" } },
         401,
@@ -220,13 +221,13 @@ export default {
     }
 
     try {
-      return await mcpHandler.fetch(request, env, ctx);
+      return await statelessHandler(request, env, ctx);
     } catch (error) {
-      console.error("WindowMCP handler failure", error);
+      console.error("stateless MCP route failure", error);
       return json(
         {
           ok: false,
-          stage: "mcp-handler",
+          stage: "stateless-mcp-handler",
           name: error instanceof Error ? error.name : "Error",
           message: error instanceof Error ? error.message : String(error),
         },
