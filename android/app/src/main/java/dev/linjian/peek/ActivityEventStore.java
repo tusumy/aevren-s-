@@ -83,26 +83,26 @@ public final class ActivityEventStore {
     }
 
     public static JSONArray todayJourney(Context ctx, int limit) {
-        return listCategory(ctx, Math.max(1, limit), true, true);
+        return listCategory(ctx, Math.max(1, limit), true, ActivityEventFilter.Category.PHONE);
+    }
+
+    public static JSONArray todayCompanionJourney(Context ctx, int limit) {
+        return listCategory(ctx, Math.max(1, limit), true, ActivityEventFilter.Category.COMPANION);
     }
 
     public static JSONArray companionActions(Context ctx, int limit) {
-        return listCategory(ctx, Math.max(1, limit), false, false);
+        return listCategory(ctx, Math.max(1, limit), false, ActivityEventFilter.Category.COMPANION);
     }
 
-    private static JSONArray listCategory(Context ctx, int limit, boolean todayOnly, boolean phoneCategory) {
+    private static JSONArray listCategory(Context ctx, int limit, boolean todayOnly, ActivityEventFilter.Category category) {
         JSONArray out = new JSONArray();
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
         try {
             JSONArray all = new JSONArray(AppPrefs.get(ctx).getString(KEY_EVENTS, "[]"));
             for (int i = 0; i < all.length() && out.length() < limit; i++) {
                 JSONObject e = all.optJSONObject(i); if (e == null) continue;
-                if (todayOnly && !today.equals(e.optString("local_date", ""))) continue;
                 String source = e.optString("source", ""), type = e.optString("type", "");
-                boolean matches = phoneCategory
-                        ? ("phone".equals(source) || "app_open".equals(type) || "guidian_return".equals(type) || "screen_break_trigger".equals(type))
-                        : ("companion".equals(source) || "assistant".equals(source) || "command".equals(type) || "notification".equals(type) || "weather".equals(type) || "calendar".equals(type) || "status_check".equals(type));
-                if (matches) out.put(e);
+                if (ActivityEventFilter.matches(source, type, e.optString("local_date", ""), today, todayOnly, category)) out.put(e);
             }
         } catch (Exception ignored) { }
         return out;

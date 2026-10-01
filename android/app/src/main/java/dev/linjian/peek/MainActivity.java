@@ -2815,7 +2815,10 @@ public class MainActivity extends Activity {
         long now = System.currentTimeMillis();
         if (now - lastCompanionSyncAt > 30_000L && AppPrefs.server(this) != null && !AppPrefs.server(this).trim().isEmpty()) {
             lastCompanionSyncAt = now;
-            CompanionWindowState.sync(this, 20, (state, error) -> runOnUiThread(() -> renderCompanionState(state)));
+            CompanionWindowState.sync(this, 20, (state, error) -> runOnUiThread(() -> {
+                renderCompanionState(state);
+                updateJourney(state);
+            }));
         }
         if (drawerGuidianButton != null && (drawerGuidian == null || drawerGuidian.getVisibility() != View.VISIBLE)) drawerGuidianButton.setText("归电  ›");
         if (drawerGuidianSettingsButton != null && (drawerGuidianSettings == null || drawerGuidianSettings.getVisibility() != View.VISIBLE)) drawerGuidianSettingsButton.setText("归电设置  ›");

@@ -33,6 +33,20 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
+      - name: Run Python regressions
+        run: |
+          for test_file in android/tests/test_*.py; do
+            python "$test_file"
+          done
+
+      - name: Run activity event filter regression
+        run: |
+          mkdir -p /tmp/activity-event-filter-test
+          javac -d /tmp/activity-event-filter-test \
+            android/app/src/main/java/dev/linjian/peek/ActivityEventFilter.java \
+            android/tests/ActivityEventFilterTest.java
+          java -cp /tmp/activity-event-filter-test dev.linjian.peek.ActivityEventFilterTest
+
       - name: Build and verify signed APK
         run: |
           chmod +x android/build.sh

@@ -1,7 +1,6 @@
 package dev.linjian.peek;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -20,8 +19,6 @@ import java.util.Locale;
 /** 共同窗语、陪伴对象行动摘要和今日轨迹。 */
 public final class CompanionWindowState {
     public static final String KEY_CACHE = "companion_window_cache_v1";
-    public static final String KEY_JOURNEY = "today_journey_v1";
-    public static final String KEY_JOURNEY_DAY = "today_journey_day_v1";
 
     public interface Callback { void done(JSONObject state, String error); }
 
@@ -110,34 +107,11 @@ public final class CompanionWindowState {
 
     public static synchronized void recordJourney(Context ctx, String title, String detail) {
         ActivityEventStore.recordPhone(ctx, eventType(title), title, detail);
-        try {
-            SharedPreferences p = AppPrefs.get(ctx);
-            if (!p.getBoolean(AppPrefs.KEY_JOURNEY_ENABLED, true)) return;
-            String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
-            JSONArray items = today.equals(p.getString(KEY_JOURNEY_DAY, "")) ? new JSONArray(p.getString(KEY_JOURNEY, "[]")) : new JSONArray();
-            JSONObject entry = new JSONObject();
-            entry.put("at", System.currentTimeMillis());
-            entry.put("time", new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
-            entry.put("title", clip(title, 48));
-            entry.put("detail", clip(detail, 100));
-            items.put(entry);
-            JSONArray kept = new JSONArray();
-            for (int i = Math.max(0, items.length() - 16); i < items.length(); i++) kept.put(items.optJSONObject(i));
-            p.edit().putString(KEY_JOURNEY_DAY, today).putString(KEY_JOURNEY, kept.toString()).apply();
-        } catch (Exception ignored) { }
     }
 
     public static JSONArray journey(Context ctx) {
         if (!AppPrefs.get(ctx).getBoolean(AppPrefs.KEY_JOURNEY_ENABLED, true)) return new JSONArray();
-        JSONArray unified = ActivityEventStore.todayJourney(ctx, 500);
-        if (unified.length() > 0) return unified;
-        try {
-            SharedPreferences p = AppPrefs.get(ctx);
-            if (!p.getBoolean(AppPrefs.KEY_JOURNEY_ENABLED, true)) return new JSONArray();
-            String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
-            if (!today.equals(p.getString(KEY_JOURNEY_DAY, ""))) return new JSONArray();
-            return new JSONArray(p.getString(KEY_JOURNEY, "[]"));
-        } catch (Exception ignored) { return new JSONArray(); }
+        return ActivityEventStore.todayCompanionJourney(ctx, 500);
     }
 
     private static String eventType(String title) {
