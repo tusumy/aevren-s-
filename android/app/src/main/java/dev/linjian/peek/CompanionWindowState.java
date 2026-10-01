@@ -40,8 +40,23 @@ public final class CompanionWindowState {
         JSONArray merged = new JSONArray();
         java.util.HashSet<String> seen = new java.util.HashSet<>();
         appendUnique(merged, seen, ActivityEventStore.companionActions(ctx, 500));
-        appendUnique(merged, seen, cached(ctx).optJSONArray("actions"));
+        appendCompanionUnique(merged, seen, cached(ctx).optJSONArray("actions"));
         return merged;
+    }
+
+    private static void appendCompanionUnique(JSONArray out, java.util.HashSet<String> seen, JSONArray items) {
+        if (items == null) return;
+        JSONArray filtered = new JSONArray();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            if (ActivityEventFilter.matches(
+                    item.optString("source", ""),
+                    item.optString("type", item.optString("kind", "")),
+                    "", "", false,
+                    ActivityEventFilter.Category.COMPANION)) filtered.put(item);
+        }
+        appendUnique(out, seen, filtered);
     }
 
     private static void appendUnique(JSONArray out, java.util.HashSet<String> seen, JSONArray items) {

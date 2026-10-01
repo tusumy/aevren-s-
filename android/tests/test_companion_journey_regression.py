@@ -15,6 +15,8 @@ def test_companion_journey_uses_companion_events_from_today():
 
     assert "public static JSONArray todayCompanionJourney(Context ctx, int limit)" in store
     assert "ActivityEventStore.todayCompanionJourney(ctx, 500)" in window
+    assert 'appendCompanionUnique(merged, seen, cached(ctx).optJSONArray("actions"))' in window
+    assert 'appendUnique(merged, seen, cached(ctx).optJSONArray("actions"))' not in window
     assert 'KEY_JOURNEY = "today_journey_v1"' not in window
     assert 'KEY_JOURNEY_DAY = "today_journey_day_v1"' not in window
 

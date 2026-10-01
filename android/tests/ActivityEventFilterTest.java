@@ -10,6 +10,10 @@ public final class ActivityEventFilterTest {
         expect(true, ActivityEventFilter.matches("linche", "activity", today, today, true, ActivityEventFilter.Category.COMPANION));
         expect(false, ActivityEventFilter.matches("linche", "activity", "2026-10-01", today, true, ActivityEventFilter.Category.COMPANION));
         expect(true, ActivityEventFilter.matches("linche", "activity", "2026-10-01", today, false, ActivityEventFilter.Category.COMPANION));
+        expect(false, ActivityEventFilter.matches("phone", "phone_activity", "", "", false, ActivityEventFilter.Category.COMPANION));
+        expect(false, ActivityEventFilter.matches("phone", "app_open", "", "", false, ActivityEventFilter.Category.COMPANION));
+        expect(true, ActivityEventFilter.matches("companion", "activity", "", "", false, ActivityEventFilter.Category.COMPANION));
+        expect(true, ActivityEventFilter.matches("", "command", "", "", false, ActivityEventFilter.Category.COMPANION));
     }
 
     private static void expect(boolean expected, boolean actual) {
