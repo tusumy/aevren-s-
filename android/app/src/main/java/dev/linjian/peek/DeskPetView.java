@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.os.Handler;
+import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.Random;
@@ -19,6 +20,7 @@ public class DeskPetView extends View {
     private static final int STATE_SLEEP = 2;
     private static final int STATE_PEEK = 3;
     private static final int STATE_HAPPY = 4;
+    private static final long AUTO_SLEEP_DELAY_MS = 20_000L;
 
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -28,7 +30,8 @@ public class DeskPetView extends View {
     private final Bitmap closedCat;
     private final RectF destination = new RectF();
 
-    private int state = STATE_IDLE;
+    private int state = STATE_SLEEP;
+    private boolean asleep = true;
     private boolean looking;
     private boolean peeking;
     private boolean edgeGrabbed;
@@ -56,7 +59,15 @@ public class DeskPetView extends View {
         handler.post(ambientLoop);
     }
 
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event != null && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            wakeForActivity();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
     public void lookAtUser(long durationMs) {
+        wakeForActivity();
         handler.removeCallbacks(edgeRevealStep);
         edgeGrabbed = false;
         edgeRevealing = false;
@@ -72,18 +83,18 @@ public class DeskPetView extends View {
     public void earTwitch() {
         if (released) return;
         earTwitch = 1f;
-        if (!looking) state = STATE_HAPPY;
+        if (!asleep && !looking) state = STATE_HAPPY;
         invalidate();
         handler.postDelayed(() -> {
             if (released) return;
             earTwitch = 0f;
-            if (!looking && !peeking) state = STATE_IDLE;
+            if (!looking && !peeking) state = asleep ? STATE_SLEEP : STATE_IDLE;
             invalidate();
         }, 420L);
     }
 
     public void setWatchMode(boolean watchMode) {
-        if (watchMode) lookAtUser(2200L);
+        if (watchMode && !asleep) lookAtUser(2200L);
     }
 
     /** 0..1 activation from the embodiment layer; only changes animation timing. */
@@ -92,14 +103,14 @@ public class DeskPetView extends View {
     }
 
     public void peek(long durationMs) {
-        if (released || looking) return;
+        if (released || looking || asleep) return;
         peeking = true;
         state = STATE_PEEK;
         invalidate();
         handler.postDelayed(() -> {
             if (released) return;
             peeking = false;
-            if (!looking) state = STATE_IDLE;
+            if (!looking) state = asleep ? STATE_SLEEP : STATE_IDLE;
             invalidate();
         }, durationMs);
     }
@@ -125,7 +136,7 @@ public class DeskPetView extends View {
         edgeRevealing = false;
         edgeReveal = 0f;
         edgeSide = 0;
-        if (!looking && !peeking) state = STATE_IDLE;
+        if (!looking && !peeking) state = asleep ? STATE_SLEEP : STATE_IDLE;
         invalidate();
     }
 
@@ -148,6 +159,32 @@ public class DeskPetView extends View {
         released = true;
         handler.removeCallbacksAndMessages(null);
     }
+
+    private void wakeForActivity() {
+        if (released) return;
+        handler.removeCallbacks(goToSleep);
+        boolean wasAsleep = asleep;
+        asleep = false;
+        if (wasAsleep && !looking && !peeking && !edgeGrabbed && !edgeRevealing) {
+            state = STATE_IDLE;
+            invalidate();
+        }
+        handler.postDelayed(goToSleep, AUTO_SLEEP_DELAY_MS);
+    }
+
+    private final Runnable goToSleep = new Runnable() {
+        @Override public void run() {
+            if (released) return;
+            if (looking || peeking || edgeGrabbed || edgeRevealing) {
+                handler.postDelayed(this, 1500L);
+                return;
+            }
+            asleep = true;
+            state = STATE_SLEEP;
+            earTwitch = 0f;
+            invalidate();
+        }
+    };
 
     private long edgeLookDurationMs = 1800L;
 
@@ -173,18 +210,18 @@ public class DeskPetView extends View {
 
     private final Runnable stopLooking = () -> {
         looking = false;
-        if (!peeking) state = STATE_IDLE;
+        if (!peeking) state = asleep ? STATE_SLEEP : STATE_IDLE;
         invalidate();
     };
 
     private final Runnable blinkLoop = new Runnable() {
         @Override public void run() {
             if (released) return;
-            if (!looking && !peeking && state == STATE_IDLE) {
+            if (!asleep && !looking && !peeking && state == STATE_IDLE) {
                 state = STATE_BLINK;
                 invalidate();
                 handler.postDelayed(() -> {
-                    if (!released && !looking && !peeking && state == STATE_BLINK) {
+                    if (!released && !asleep && !looking && !peeking && state == STATE_BLINK) {
                         state = STATE_IDLE;
                         invalidate();
                     }
@@ -199,20 +236,11 @@ public class DeskPetView extends View {
     private final Runnable ambientLoop = new Runnable() {
         @Override public void run() {
             if (released) return;
-            if (!looking && !peeking && state == STATE_IDLE) {
-                int roll = random.nextInt(9);
+            if (!asleep && !looking && !peeking && state == STATE_IDLE) {
+                int roll = random.nextInt(10);
                 if (roll == 0) {
-                    state = STATE_SLEEP;
-                    invalidate();
-                    handler.postDelayed(() -> {
-                        if (!released && !looking && !peeking && state == STATE_SLEEP) {
-                            state = STATE_IDLE;
-                            invalidate();
-                        }
-                    }, 950L);
-                } else if (roll == 1) {
                     earTwitch();
-                } else if (roll == 2) {
+                } else if (roll == 1) {
                     peek(1050L);
                 }
             }
