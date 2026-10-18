@@ -26,8 +26,8 @@ def test_selective_sync():
     assert "diary_annotation_whitelist_fix" in server
     assert "notifyWalletUpdated(ctx)" in companion
     assert "walletUpdatedReceiver" in wallet
-    assert 'android:versionCode="30901"' in source("android/app/src/main/AndroidManifest.xml")
-    assert 'APP_VERSION_CODE = 30901' in source("android/app/src/main/java/dev/linjian/peek/AppPrefs.java")
+    assert 'android:versionCode="30902"' in source("android/app/src/main/AndroidManifest.xml")
+    assert 'APP_VERSION_CODE = 30902' in source("android/app/src/main/java/dev/linjian/peek/AppPrefs.java")
 
 if __name__ == "__main__":
     test_selective_sync()
