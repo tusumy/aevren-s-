@@ -68,6 +68,7 @@ public class DeskPetService extends Service {
     private DeskPetEmbodiment embodiment;
     private boolean holdReacted;
     private boolean docked;
+    private boolean manualNap;
     private int dockSide = EDGE_RIGHT;
     private long edgeGrabStartedAt;
 
@@ -181,6 +182,7 @@ public class DeskPetService extends Service {
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_SLEEP.equals(intent.getAction()) && pet != null) {
+            manualNap = true;
             pet.sleepNow();
             if (!docked) showBubble("……困了。");
         }
@@ -309,6 +311,7 @@ public class DeskPetService extends Service {
     private boolean onTouch(View view, MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                manualNap = false;
                 dragging = false;
                 holdReacted = false;
                 edgeGrabbed = false;
@@ -544,6 +547,7 @@ public class DeskPetService extends Service {
         pet.setRotation(0f);
         pet.setScaleX(1f);
         pet.setScaleY(1f);
+        manualNap = true;
         pet.sleepNow();
         pet.setVisibility(View.INVISIBLE);
         FrameLayout.LayoutParams tabLp = (FrameLayout.LayoutParams) dockHandle.getLayoutParams();
@@ -563,6 +567,7 @@ public class DeskPetService extends Service {
     private void undockPet() {
         if (!docked || pet == null || root == null || params == null) return;
         docked = false;
+        manualNap = false;
         dockHandle.setVisibility(View.GONE);
         pet.setVisibility(View.VISIBLE);
         int savedX = AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, params.x);
@@ -842,7 +847,7 @@ public class DeskPetService extends Service {
     private final Runnable idleLoop = new Runnable() {
         @Override public void run() {
             if (pet == null) return;
-            if (!dragging && !docked) {
+            if (!dragging && !docked && !manualNap) {
                 DeskPetEmbodiment.Snapshot body = sampleBody();
                 if (random.nextInt(body.idleTwitchDenominator()) == 0) pet.earTwitch();
                 if (watchMode && random.nextInt(9) == 0) {
