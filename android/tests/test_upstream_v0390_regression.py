@@ -14,6 +14,11 @@ def test_selective_sync():
     wallet = source("android/app/src/main/java/dev/linjian/peek/WalletActivity.java")
     companion = source("android/app/src/main/java/dev/linjian/peek/CompanionService.java")
     assert "dockToSide(" in pet and "undockPet(" in pet
+    assert "DOCK_TAB_WIDTH_DP = 20" in pet and "DOCK_TAB_HEIGHT_DP = 54" in pet
+    assert "params.width = dp(DOCK_TAB_WIDTH_DP)" in pet
+    assert "params.height = dp(DOCK_TAB_HEIGHT_DP)" in pet
+    assert "params.x = side == EDGE_LEFT ? 0 : screenW - params.width" in pet
+    assert "draggedIntoSide" in pet and "outwardSwipe" in pet
     assert "drawSleepMarks(" in view
     assert "sanitizeMcpRequestBody(req.body)" in mcp
     assert "contentResult(" in mcp and "walletResult(" in mcp

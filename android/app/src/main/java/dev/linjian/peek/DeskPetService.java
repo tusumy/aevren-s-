@@ -81,8 +81,10 @@ public class DeskPetService extends Service {
     private static final int EDGE_STICKY_RELEASE_DP = 34;
     private static final int EDGE_PULL_AWAY_DP = 28;
     private static final int EDGE_STRUGGLE_GAP_MS = 105;
-    private static final int EDGE_DOCK_HOLD_MS = 700;
-    private static final int DOCK_TAB_WIDTH_DP = 36;
+    private static final int DOCK_TAB_WIDTH_DP = 20;
+    private static final int DOCK_TAB_HEIGHT_DP = 54;
+    private static final int EXPANDED_WIDTH_DP = 150;
+    private static final int EXPANDED_HEIGHT_DP = 132;
 
     private boolean edgeGrabbed;
     private int edgeGrabSide = EDGE_NONE;
@@ -246,24 +248,21 @@ public class DeskPetService extends Service {
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        // A real, narrow touch target remains on screen while the rest of the cat hides.
+        // Collapsed mode uses a real 20dp-wide window, not a huge offscreen overlay.
+        // This also works on Android skins that clamp partially offscreen windows.
         dockHandle = new TextView(this);
-        dockHandle.setTextColor(0xFF428B6B);
-        dockHandle.setTextSize(29f);
+        dockHandle.setTextColor(0xFF438B6C);
+        dockHandle.setTextSize(18f);
         dockHandle.setGravity(Gravity.CENTER);
-        dockHandle.setContentDescription("叫玄砚从屏幕边缘出来");
-        GradientDrawable tabBg = new GradientDrawable();
-        tabBg.setColor(0xF0F5FCF7);
-        tabBg.setStroke(dp(1), 0xFF9ECBB0);
-        tabBg.setCornerRadius(dp(20));
-        dockHandle.setBackground(tabBg);
-        if (Build.VERSION.SDK_INT >= 21) dockHandle.setElevation(dp(3));
+        dockHandle.setIncludeFontPadding(false);
+        dockHandle.setContentDescription("点一下让玄砚从屏幕边缘出来");
         dockHandle.setVisibility(View.GONE);
         dockHandle.setOnClickListener(v -> undockPet());
         root.addView(dockHandle, new FrameLayout.LayoutParams(
-                dp(DOCK_TAB_WIDTH_DP), dp(64), Gravity.CENTER_VERTICAL | Gravity.START));
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
 
-        int width = dp(150), height = dp(132);
+        int width = dp(EXPANDED_WIDTH_DP), height = dp(EXPANDED_HEIGHT_DP);
         params = new WindowManager.LayoutParams(
                 width, height,
                 Build.VERSION.SDK_INT >= 26
@@ -394,14 +393,29 @@ public class DeskPetService extends Service {
                 cancelPendingEdgeGrab();
                 if (edgeGrabbed) {
                     savePosition();
+                    // Dragging onto a side docks on release; if already at a side,
+                    // an outward swipe docks and an inward tug keeps the old struggle.
+                    boolean outwardSwipe = (edgeGrabSide == EDGE_LEFT && event.getRawX() < downRawX - dp(18))
+                            || (edgeGrabSide == EDGE_RIGHT && event.getRawX() > downRawX + dp(18));
+                    boolean draggedIntoSide = dragStartEdgeSide == EDGE_NONE;
                     if ((edgeGrabSide == EDGE_LEFT || edgeGrabSide == EDGE_RIGHT)
-                            && edgeGrabStartedAt > 0L
-                            && event.getEventTime() - edgeGrabStartedAt >= EDGE_DOCK_HOLD_MS) {
+                            && (outwardSwipe || draggedIntoSide)) {
                         dockToSide(edgeGrabSide);
                     } else {
                         finishEdgeGrab();
                     }
                 } else if (dragging) {
+                    int dockingSide = edgeSideAt(params.x, params.y, dp(16));
+                    if ((dockingSide == EDGE_LEFT || dockingSide == EDGE_RIGHT)
+                            && Math.abs(event.getRawX() - downRawX) > dp(24)) {
+                        savePosition();
+                        dockToSide(dockingSide);
+                        dragging = false;
+                        dragStartEdgeSide = EDGE_NONE;
+                        edgeGrabbed = false;
+                        edgeGrabSide = EDGE_NONE;
+                        return true;
+                    }
                     DeskPetGestureTracker.Outcome outcome = holdReacted
                             ? DeskPetGestureTracker.Outcome.NONE
                             : gestureTracker.finish(event.getRawX(), event.getRawY(), event.getEventTime(),
@@ -526,7 +540,7 @@ public class DeskPetService extends Service {
         scheduleHoldReaction();
     }
 
-    /** Slide the overlay off-screen, leaving only a visible 36dp pull tab. */
+    /** Collapse the entire overlay window to a slim edge tab. */
     private void dockToSide(int side) {
         if (root == null || windowManager == null || params == null || dockHandle == null) return;
         if (side != EDGE_LEFT && side != EDGE_RIGHT) side = EDGE_RIGHT;
@@ -542,6 +556,7 @@ public class DeskPetService extends Service {
         if (bubbleTail != null) { bubbleTail.animate().cancel(); bubbleTail.setVisibility(View.INVISIBLE); }
         pet.animate().cancel();
         pet.cancelEdgeGrab();
+        pet.setAlpha(1f);
         pet.setTranslationX(0f);
         pet.setTranslationY(0f);
         pet.setRotation(0f);
@@ -549,16 +564,25 @@ public class DeskPetService extends Service {
         pet.setScaleY(1f);
         manualNap = true;
         pet.sleepNow();
-        pet.setVisibility(View.INVISIBLE);
-        FrameLayout.LayoutParams tabLp = (FrameLayout.LayoutParams) dockHandle.getLayoutParams();
-        tabLp.gravity = Gravity.CENTER_VERTICAL | (side == EDGE_LEFT ? Gravity.END : Gravity.START);
-        dockHandle.setLayoutParams(tabLp);
+        pet.setVisibility(View.GONE);
+        int centerY = params.y + (params.height > 0 ? params.height : dp(EXPANDED_HEIGHT_DP)) / 2;
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        params.width = dp(DOCK_TAB_WIDTH_DP);
+        params.height = dp(DOCK_TAB_HEIGHT_DP);
+        params.x = side == EDGE_LEFT ? 0 : screenW - params.width;
+        params.y = clamp(centerY - params.height / 2, 0, Math.max(0, screenH - params.height));
+        // Square at the screen edge, softly rounded toward the actual screen content.
+        GradientDrawable tab = new GradientDrawable();
+        tab.setColor(0xDDF3FFF7);
+        tab.setStroke(dp(1), 0xBB9AC9B1);
+        float r = dp(14);
+        tab.setCornerRadii(side == EDGE_LEFT
+                ? new float[]{0, 0, r, r, r, r, 0, 0}
+                : new float[]{r, r, 0, 0, 0, 0, r, r});
+        dockHandle.setBackground(tab);
         dockHandle.setText(side == EDGE_LEFT ? "›" : "‹");
         dockHandle.setVisibility(View.VISIBLE);
-        params.x = side == EDGE_LEFT
-                ? -overlayWidth() + dp(DOCK_TAB_WIDTH_DP)
-                : getResources().getDisplayMetrics().widthPixels - dp(DOCK_TAB_WIDTH_DP);
-        params.y = clamp(params.y, minY(), maxY());
         windowManager.updateViewLayout(root, params);
         AppPrefs.get(this).edit().putBoolean(KEY_DOCKED, true)
                 .putInt(KEY_DOCK_SIDE, side).apply();
@@ -568,16 +592,23 @@ public class DeskPetService extends Service {
         if (!docked || pet == null || root == null || params == null) return;
         docked = false;
         manualNap = false;
+        int centerY = params.y + params.height / 2;
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        params.width = dp(EXPANDED_WIDTH_DP);
+        params.height = dp(EXPANDED_HEIGHT_DP);
+        params.x = dockSide == EDGE_LEFT ? dp(12)
+                : Math.max(0, screenW - params.width - dp(12));
+        params.y = clamp(centerY - params.height / 2, minY(),
+                Math.min(maxY(), Math.max(minY(), screenH - params.height)));
         dockHandle.setVisibility(View.GONE);
         pet.setVisibility(View.VISIBLE);
-        int savedX = AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, params.x);
-        // Come back inside the screen, not still stuck to the same grab edge.
-        int inset = dp(48);
-        params.x = clamp(savedX + (dockSide == EDGE_LEFT ? inset : -inset), minX(), maxX());
-        params.y = clamp(params.y, minY(), maxY());
+        pet.setAlpha(0f);
+        pet.setTranslationX(dockSide == EDGE_LEFT ? -dp(28) : dp(28));
         windowManager.updateViewLayout(root, params);
         AppPrefs.get(this).edit().putBoolean(KEY_DOCKED, false).apply();
         savePosition();
+        pet.animate().alpha(1f).translationX(0f).setDuration(230L).start();
         pet.lookAtUser(1550L);
         showBubble("我出来了。");
     }
@@ -944,8 +975,7 @@ public class DeskPetService extends Service {
         if (root == null || params == null || windowManager == null) return;
         params.y = clamp(params.y, minY(), maxY());
         if (docked) {
-            params.x = dockSide == EDGE_LEFT
-                    ? -overlayWidth() + dp(DOCK_TAB_WIDTH_DP)
+            params.x = dockSide == EDGE_LEFT ? 0
                     : getResources().getDisplayMetrics().widthPixels - dp(DOCK_TAB_WIDTH_DP);
         } else {
             params.x = clamp(params.x, minX(), maxX());
@@ -996,7 +1026,7 @@ public class DeskPetService extends Service {
         return b.setSmallIcon(R.drawable.ic_heart_wave)
                 .setLargeIcon(largeIcon)
                 .setContentTitle("玄砚在桌面陪你")
-                .setContentText("靠左右边缘停一会儿可收起；轻点叫醒我")
+                .setContentText("拖向左右边缘松手就藏起来，轻点小拉片叫我")
                 .setContentIntent(openPi)
                 .addAction(0, "打盹 💤", sleepPi)
                 .addAction(0, "收回", stopPi)

@@ -61,18 +61,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.1
-          path: android/Zhangxinchuang-public-v0.3.9.1.apk
+          name: aevren-android-v0.3.9.2
+          path: android/Zhangxinchuang-public-v0.3.9.2.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.1
-          name: 砚团 v0.3.9.1
+          tag_name: v0.3.9.2
+          name: 砚团 v0.3.9.2
           body: |
-            保留玄砚桌宠的侧边收纳与睡眠动效，选择性吸收上游 v0.3.9.0 的 MCP 初始化、截图、日记批注和小金库确认修复。
+            修复贴边收纳：拖到左右屏幕边缘即缩进，悬浮窗缩成 20dp 宽小拉片；保留玄砚桌宠睡眠、MCP 与上游同步功能。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.1.apk
+          files: android/Zhangxinchuang-public-v0.3.9.2.apk
           fail_on_unmatched_files: true
