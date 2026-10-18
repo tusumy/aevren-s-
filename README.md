@@ -1,3 +1,11 @@
+# 砚团 v0.3.9.1（选择性同步掌心窗上游 v0.3.9.0）
+
+- 保留本 fork 的玄砚桌宠、贴边收起、打盹与其他定制代码，不直接用上游文件覆盖。
+- 同步 MCP initialize `ovoActivityCards` 兼容；截图 `content` / `structuredContent` 输出。
+- 补齐日记批注 server 命令白名单；同步小金库手机确认状态及页面广播刷新。
+- Android 版本号 `0.3.9.1` / `30901`，沿用固定公版签名。
+- 后端（MCP、server、Cloudflare Worker）需分别重新部署；仅安装 APK 不会更新后端。
+
 # 掌心窗公开版 v0.3.8.8
 
 ## v0.3.8.8 此刻状态媒体读取修复

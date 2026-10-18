@@ -226,7 +226,7 @@ public class CompanionService extends Service {
                 boolean ok = rr.optBoolean("ok", false);
                 String result = rr.optString("result", rr.toString());
                 DebugState.append(ctx, "执行小金库命令 " + action + "：" + result);
-                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, true); } catch (Exception ignored) { }
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); notifyWalletUpdated(ctx); uploadStateThrottled(serverUrl, token, ctx, true); } catch (Exception ignored) { }
                 return;
             }
             if (isTakeoutAction(action)) {
@@ -531,6 +531,14 @@ public class CompanionService extends Service {
             ctx.startActivity(i);
             return true;
         } catch (Exception e) { DebugState.append(ctx, "远程闹钟异常：" + ScreenshotService.shortMsg(e)); return false; }
+    }
+
+    private static void notifyWalletUpdated(Context ctx) {
+        try {
+            Intent i = new Intent("dev.linjian.peek.WALLET_UPDATED");
+            i.setPackage(ctx.getPackageName());
+            ctx.sendBroadcast(i);
+        } catch (Exception ignored) { }
     }
 
     private static void uploadStateThrottled(String serverUrl, String token, Context ctx, boolean force) throws Exception {

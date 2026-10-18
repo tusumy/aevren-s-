@@ -47,6 +47,12 @@ jobs:
             android/tests/ActivityEventFilterTest.java
           java -cp /tmp/activity-event-filter-test dev.linjian.peek.ActivityEventFilterTest
 
+      - name: Validate MCP and server syntax
+        run: |
+          node --check mcp/server.js
+          node --check server/cloudflare-worker/worker.js
+          python -m py_compile server/linjian_server.py
+
       - name: Build and verify signed APK
         run: |
           chmod +x android/build.sh
@@ -55,18 +61,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.8.14
-          path: android/Zhangxinchuang-public-v0.3.8.14.apk
+          name: aevren-android-v0.3.9.1
+          path: android/Zhangxinchuang-public-v0.3.9.1.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.8.14
-          name: 砚团 v0.3.8.14
+          tag_name: v0.3.9.1
+          name: 砚团 v0.3.9.1
           body: |
-            桌宠侧边收纳：贴左右边缘停留后可缩成可点开的拉片；新增闭眼呼吸和浮动 Zzz 睡眠状态。
+            保留玄砚桌宠的侧边收纳与睡眠动效，选择性吸收上游 v0.3.9.0 的 MCP 初始化、截图、日记批注和小金库确认修复。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.8.14.apk
+          files: android/Zhangxinchuang-public-v0.3.9.1.apk
           fail_on_unmatched_files: true

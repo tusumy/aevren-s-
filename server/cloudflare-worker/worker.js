@@ -1,4 +1,4 @@
-const VERSION = "0.3.8.8-public-diary-annotations";
+const VERSION = "0.3.9.1-public-diary-annotations";
 // MCP Apps clients cache UI resources by URI. Change the URI whenever the HTML changes.
 const STICKER_WIDGET_URI = "ui://linjian/sticker-card-v0433.html";
 const STICKER_WIDGET_ORIGIN = "https://linjian-peek-cloudflare.linzhi524.workers.dev";
@@ -510,6 +510,16 @@ function mcpResult(id, result) { return { jsonrpc: "2.0", id, result }; }
 function mcpError(id, code, message, data = undefined) { return { jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } }; }
 function mcpErrorResponse(id, code, message, status = 400) { return json(mcpError(id, code, message), status); }
 function mcpText(payload, isError = false) { return { isError, content: [{ type: "text", text: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2) }] }; }
+function mcpContent(content = [], isError = false, structuredContent = undefined) {
+  const safeContent = Array.isArray(content) ? content : (content ? [content] : []);
+  return { isError, content: safeContent, ...(structuredContent === undefined ? {} : { structuredContent }) };
+}
+function arrayBufferToBase64(ab) {
+  const u8 = new Uint8Array(ab || new ArrayBuffer(0));
+  let bin = "";
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 async function responseJson(response) { try { return await response.json(); } catch (_) { return { ok: false, error: "invalid_json_response", status: response.status }; } }
 function fakeUrl(path) { return new URL(`https://mcp.local${path}`); }
 function qs(obj = {}) { const q = new URLSearchParams(); for (const [k, v] of Object.entries(obj)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v)); return q.toString(); }
@@ -677,7 +687,7 @@ async function callMcpTool(name, args = {}, env) {
     case "get_activity_events": return mcpText(await responseJson(await listActivityEvents(env, fakeUrl(`/api/activity/events?${qs({ device_id: args.device_id || "", source: args.source || "", limit: args.limit || 50 })}`))));
     case "add_activity_event": return mcpText(await responseJson(await saveActivityEvent(env, args || {})));
     case "latest_screen": return latestScreenMcp(env);
-    case "peek_screen": return observed({ action: "peek" }, args.wait_seconds ?? 8);
+    case "peek_screen": return peekScreenMcp(env, device_id, args.wait_seconds ?? 8);
 
     case "get_screen_nodes": return observed({ action: "get_screen_nodes" }, args.wait_seconds ?? 8);
     case "tap_text": return observed({ action: "tap_text", target_text: args.target_text || "", match: args.match || "contains", index: args.index || 1, payload: { target_text: args.target_text || "", match: args.match || "contains", index: args.index || 1 } }, args.wait_seconds ?? 8);
@@ -799,9 +809,9 @@ async function callMcpTool(name, args = {}, env) {
       const payload = { action: "confirm_wallet_record", id: args.id || "", decision: args.decision || "confirm", amount: args.amount, category: args.category || "", note: args.note || "" };
       return observed({ ...payload, payload }, args.wait_seconds ?? 8);
     }
-    case "decide_wallet_approval": return mcpText(await decideWalletApprovalDirect(env, device_id, args || {}));
+    case "decide_wallet_approval": { const r = await decideWalletApprovalDirect(env, device_id, args || {}); return mcpText(r, r?.ok === false); }
     case "save_wallet_request_result":
-    case "update_wallet_request_result": return mcpText(await saveWalletRequestResultDirect(env, device_id, args || {}));
+    case "update_wallet_request_result": { const r = await saveWalletRequestResultDirect(env, device_id, args || {}); return mcpText(r, r?.ok === false); }
     case "set_wallet_rules": {
       const payload = withoutKeys(args, ["device_id", "wait_seconds"]); payload.action = "set_wallet_rules";
       return observed({ ...payload, payload }, args.wait_seconds ?? 8);
@@ -1208,20 +1218,51 @@ async function deleteStickerApi(env, body = {}) {
   return json(r.ok ? { ok: true, deleted_id: id } : r, r.ok ? 200 : 500);
 }
 
-async function latestScreenMcp(env) {
-  if (!env.SCREENSHOT_KV) return mcpText({ ok: false, error: "missing_kv_binding" }, true);
+async function readLatestScreen(env) {
+  if (!env.SCREENSHOT_KV) return { ok: false, error: "missing_kv_binding" };
   const meta = await env.SCREENSHOT_KV.getWithMetadata("latest", "arrayBuffer");
-  if (!meta.value) return mcpText({ ok: false, error: "LINJIAN_ERR_NOT_FOUND" }, true);
+  if (!meta.value) return { ok: false, error: "LINJIAN_ERR_NOT_FOUND" };
   const md = meta.metadata || {};
   const bytes = meta.value.byteLength || 0;
-  const content = [{ type: "text", text: JSON.stringify({ ok: true, bytes, content_type: md.content_type || "image/jpeg", mtime: md.mtime || "" }, null, 2) }];
-  if (bytes <= 3_500_000) {
-    const u8 = new Uint8Array(meta.value);
-    let bin = "";
-    for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
-    content.push({ type: "image", data: btoa(bin), mimeType: md.content_type || "image/jpeg" });
+  const mtime = Number(md.mtime || 0);
+  const mimeType = md.content_type || "image/jpeg";
+  return { ok: true, value: meta.value, metadata: md, bytes, mtime, mimeType, filename: mimeType === "image/png" ? "latest.png" : "latest.jpg" };
+}
+function latestScreenResult(screen, extra = {}) {
+  if (!screen?.ok) return mcpText(screen || { ok: false, error: "LINJIAN_ERR_NOT_FOUND" }, true);
+  const structured = { ok: true, filename: screen.filename, bytes: screen.bytes, content_type: screen.mimeType, mtime: screen.mtime, ...extra };
+  const content = [{ type: "text", text: JSON.stringify(structured, null, 2) }];
+  if (screen.bytes <= 3_500_000) content.push({ type: "image", data: arrayBufferToBase64(screen.value), mimeType: screen.mimeType });
+  else structured.note = "截图过大，已只返回元数据。请降低截图大小或通过 /api/latest 读取图片。";
+  return mcpContent(content, false, structured);
+}
+async function latestScreenMcp(env) {
+  const screen = await readLatestScreen(env);
+  return latestScreenResult(screen);
+}
+async function peekScreenMcp(env, device_id = DEFAULT_DEVICE, waitSeconds = 8) {
+  if (!env.SCREENSHOT_KV) return mcpText({ ok: false, error: "missing_kv_binding" }, true);
+  const before = await readLatestScreen(env).catch(() => null);
+  const beforeMtime = before?.ok ? Number(before.mtime || 0) : 0;
+  const queued = await responseJson(await queueCommand(env, { device_id, action: "peek", payload: { action: "peek" } }));
+  const commandId = queued?.command?.id || "";
+  const deadline = Date.now() + Math.max(0, Math.min(25, Number(waitSeconds || 0))) * 1000;
+  let observed = null;
+  let screen = null;
+  while (Date.now() <= deadline) {
+    if (commandId) {
+      const row = await env.DB.prepare("SELECT command_json FROM commands WHERE id=?").bind(commandId).first();
+      observed = row ? JSON.parse(row.command_json || "{}") : observed;
+    }
+    screen = await readLatestScreen(env).catch(() => null);
+    if (screen?.ok && Number(screen.mtime || 0) > beforeMtime) {
+      return latestScreenResult(screen, { queued, observed_status: observed || null, source: "peek_screen", note: "截图已上传，并已作为 image 内容返回。" });
+    }
+    await delay(700);
   }
-  return { isError: false, content };
+  const fallback = screen?.ok ? latestScreenResult(screen, { queued, observed_status: observed || null, source: "peek_screen", stale: Number(screen.mtime || 0) <= beforeMtime, note: "等待期间没有发现新的截图；已返回服务器最近一张截图。" }) : null;
+  if (fallback) return fallback;
+  return mcpText({ ok: false, error: "screenshot_timeout", queued, observed_status: observed || null, note: "命令已下发，但等待期间没有收到可读取的截图。请检查手机端截图权限、无障碍服务和 /api/screenshot 上传日志。" }, true);
 }
 
 function nowIso() { return new Date().toISOString().replace(/\.\d{3}Z$/, "Z"); }
@@ -1446,9 +1487,28 @@ async function decideWalletApprovalDirect(env, deviceId = DEFAULT_DEVICE, args =
     approvals.unshift(found);
   } else if (!approvals.some(r => r && String(r.id || "") === id)) approvals.unshift(found);
   await putCloudWalletState(env, deviceId, { ...cloud, approvals: dedupeById(approvals).slice(0, 200) });
-  const payload = { action: args.safe_action || "decide_wallet_approval", id, decision: norm.decision, status: norm.decision, message, note: message, approval_message: message, approved_by: args.approved_by || "陪伴对象" };
+  const payload = { action: args.safe_action || "decide_wallet_approval", id, decision: norm.decision, approval_result: norm.decision, status: norm.decision, message, note: message, approval_message: message, approved_by: args.approved_by || "陪伴对象" };
   const cmd = await responseJson(await queueCommand(env, { device_id: deviceId, ...payload, payload }));
-  return { ok: true, device_id: deviceId, approval: found, decision: norm.decision, message, queued_sync: cmd, direct: true };
+  const commandId = cmd?.command?.id || "";
+  const waitSeconds = Number(args.wait_seconds ?? 8);
+  const obs = commandId && waitSeconds > 0 ? await waitCommand(env, commandId, waitSeconds) : null;
+  const observedCommand = obs?.command || cmd?.command || null;
+  const phoneDone = ["completed", "failed"].includes(String(observedCommand?.status || ""));
+  const phoneOk = String(observedCommand?.status || "") === "completed";
+  return {
+    ok: phoneOk,
+    device_id: deviceId,
+    approval: found,
+    decision: norm.decision,
+    message,
+    cloud_saved: true,
+    queued_sync: cmd,
+    observed_status: observedCommand,
+    phone_confirmed: phoneDone,
+    confirmation_state: phoneOk ? "phone_completed" : (phoneDone ? "phone_failed" : "waiting_phone_confirmation"),
+    user_message: phoneOk ? "审批结果已写入手机端掌心窗。" : "审批结果已在服务端排队，正在等待手机端确认；不要显示为最终成功。",
+    direct: true
+  };
 }
 async function walletApprovalRequestDirect(env, deviceId = DEFAULT_DEVICE, args = {}) {
   const amount = Number(args.amount || 0);
