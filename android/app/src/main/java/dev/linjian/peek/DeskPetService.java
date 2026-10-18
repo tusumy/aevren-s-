@@ -16,6 +16,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -31,9 +32,12 @@ import java.util.Random;
 
 public class DeskPetService extends Service {
     public static final String ACTION_STOP = "dev.linjian.peek.STOP_DESK_PET";
+    public static final String ACTION_SLEEP = "dev.linjian.peek.SLEEP_DESK_PET";
     private static final String CHANNEL_ID = "zhangxinchuang_desk_pet";
     private static final int NOTIFICATION_ID = 20260830;
     private static final String KEY_WATCH_MODE = "desk_pet_watch_mode";
+    private static final String KEY_DOCKED = "desk_pet_docked";
+    private static final String KEY_DOCK_SIDE = "desk_pet_dock_side";
     private static final String KEY_BODY_STRESS = "desk_pet_body_stress";
     private static final String KEY_BODY_JOY = "desk_pet_body_joy";
     private static final String KEY_BODY_BOND = "desk_pet_body_bond";
@@ -50,6 +54,7 @@ public class DeskPetService extends Service {
     private DeskPetView pet;
     private TextView bubble;
     private View bubbleTail;
+    private TextView dockHandle;
 
     private boolean dragging;
     private float downRawX, downRawY;
@@ -62,6 +67,9 @@ public class DeskPetService extends Service {
     private DeskPetGestureTracker gestureTracker;
     private DeskPetEmbodiment embodiment;
     private boolean holdReacted;
+    private boolean docked;
+    private int dockSide = EDGE_RIGHT;
+    private long edgeGrabStartedAt;
 
     private static final int EDGE_NONE = 0;
     private static final int EDGE_LEFT = 1;
@@ -72,6 +80,8 @@ public class DeskPetService extends Service {
     private static final int EDGE_STICKY_RELEASE_DP = 34;
     private static final int EDGE_PULL_AWAY_DP = 28;
     private static final int EDGE_STRUGGLE_GAP_MS = 105;
+    private static final int EDGE_DOCK_HOLD_MS = 700;
+    private static final int DOCK_TAB_WIDTH_DP = 36;
 
     private boolean edgeGrabbed;
     private int edgeGrabSide = EDGE_NONE;
@@ -170,6 +180,10 @@ public class DeskPetService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (intent != null && ACTION_SLEEP.equals(intent.getAction()) && pet != null) {
+            pet.sleepNow();
+            if (!docked) showBubble("……困了。");
+        }
         return START_STICKY;
     }
 
@@ -230,6 +244,23 @@ public class DeskPetService extends Service {
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
+        // A real, narrow touch target remains on screen while the rest of the cat hides.
+        dockHandle = new TextView(this);
+        dockHandle.setTextColor(0xFF428B6B);
+        dockHandle.setTextSize(29f);
+        dockHandle.setGravity(Gravity.CENTER);
+        dockHandle.setContentDescription("叫玄砚从屏幕边缘出来");
+        GradientDrawable tabBg = new GradientDrawable();
+        tabBg.setColor(0xF0F5FCF7);
+        tabBg.setStroke(dp(1), 0xFF9ECBB0);
+        tabBg.setCornerRadius(dp(20));
+        dockHandle.setBackground(tabBg);
+        if (Build.VERSION.SDK_INT >= 21) dockHandle.setElevation(dp(3));
+        dockHandle.setVisibility(View.GONE);
+        dockHandle.setOnClickListener(v -> undockPet());
+        root.addView(dockHandle, new FrameLayout.LayoutParams(
+                dp(DOCK_TAB_WIDTH_DP), dp(64), Gravity.CENTER_VERTICAL | Gravity.START));
+
         int width = dp(150), height = dp(132);
         params = new WindowManager.LayoutParams(
                 width, height,
@@ -251,6 +282,9 @@ public class DeskPetService extends Service {
 
         try {
             windowManager.addView(root, params);
+            if (AppPrefs.get(this).getBoolean(KEY_DOCKED, false)) {
+                dockToSide(AppPrefs.get(this).getInt(KEY_DOCK_SIDE, EDGE_RIGHT));
+            }
         } catch (RuntimeException error) {
             AppPrefs.get(this).edit().putBoolean(AppPrefs.KEY_DESK_PET_ENABLED, false).apply();
             Toast.makeText(this, "玄砚没能出来，请重新允许悬浮窗权限", Toast.LENGTH_LONG).show();
@@ -259,6 +293,7 @@ public class DeskPetService extends Service {
             pet = null;
             bubble = null;
             bubbleTail = null;
+            dockHandle = null;
             stopSelf();
         }
     }
@@ -284,6 +319,7 @@ public class DeskPetService extends Service {
                 downX = params.x;
                 downY = params.y;
                 dragStartEdgeSide = edgeSideAt(params.x, params.y, dp(2));
+                edgeGrabStartedAt = 0L;
                 gestureTracker.begin(downRawX, downRawY, event.getEventTime());
                 scheduleHoldReaction();
                 pet.animate().cancel();
@@ -305,6 +341,7 @@ public class DeskPetService extends Service {
                     if (dragStartEdgeSide != EDGE_NONE && !edgeGrabbed) {
                         edgeGrabbed = true;
                         edgeGrabSide = dragStartEdgeSide;
+                        edgeGrabStartedAt = event.getEventTime();
                         holdReacted = true;
                         cancelHoldReaction();
                         pet.holdEdge(edgeGrabSide);
@@ -354,7 +391,13 @@ public class DeskPetService extends Service {
                 cancelPendingEdgeGrab();
                 if (edgeGrabbed) {
                     savePosition();
-                    finishEdgeGrab();
+                    if ((edgeGrabSide == EDGE_LEFT || edgeGrabSide == EDGE_RIGHT)
+                            && edgeGrabStartedAt > 0L
+                            && event.getEventTime() - edgeGrabStartedAt >= EDGE_DOCK_HOLD_MS) {
+                        dockToSide(edgeGrabSide);
+                    } else {
+                        finishEdgeGrab();
+                    }
                 } else if (dragging) {
                     DeskPetGestureTracker.Outcome outcome = holdReacted
                             ? DeskPetGestureTracker.Outcome.NONE
@@ -441,6 +484,7 @@ public class DeskPetService extends Service {
         holdReacted = true;
         edgeGrabbed = true;
         edgeGrabSide = side;
+        edgeGrabStartedAt = SystemClock.uptimeMillis();
         dragStartEdgeSide = EDGE_NONE;
         applyEdgeLockedPosition(params.x, params.y);
         if (pet != null) {
@@ -477,6 +521,60 @@ public class DeskPetService extends Service {
         downY = params.y;
         gestureTracker.begin(downRawX, downRawY, event.getEventTime());
         scheduleHoldReaction();
+    }
+
+    /** Slide the overlay off-screen, leaving only a visible 36dp pull tab. */
+    private void dockToSide(int side) {
+        if (root == null || windowManager == null || params == null || dockHandle == null) return;
+        if (side != EDGE_LEFT && side != EDGE_RIGHT) side = EDGE_RIGHT;
+        dockSide = side;
+        docked = true;
+        cancelHoldReaction();
+        cancelPendingEdgeGrab();
+        if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
+        pendingSingleTap = null;
+        if (pendingBubbleHide != null) handler.removeCallbacks(pendingBubbleHide);
+        pendingBubbleHide = null;
+        if (bubble != null) { bubble.animate().cancel(); bubble.setVisibility(View.INVISIBLE); }
+        if (bubbleTail != null) { bubbleTail.animate().cancel(); bubbleTail.setVisibility(View.INVISIBLE); }
+        pet.animate().cancel();
+        pet.cancelEdgeGrab();
+        pet.setTranslationX(0f);
+        pet.setTranslationY(0f);
+        pet.setRotation(0f);
+        pet.setScaleX(1f);
+        pet.setScaleY(1f);
+        pet.sleepNow();
+        pet.setVisibility(View.INVISIBLE);
+        FrameLayout.LayoutParams tabLp = (FrameLayout.LayoutParams) dockHandle.getLayoutParams();
+        tabLp.gravity = Gravity.CENTER_VERTICAL | (side == EDGE_LEFT ? Gravity.END : Gravity.START);
+        dockHandle.setLayoutParams(tabLp);
+        dockHandle.setText(side == EDGE_LEFT ? "›" : "‹");
+        dockHandle.setVisibility(View.VISIBLE);
+        params.x = side == EDGE_LEFT
+                ? -overlayWidth() + dp(DOCK_TAB_WIDTH_DP)
+                : getResources().getDisplayMetrics().widthPixels - dp(DOCK_TAB_WIDTH_DP);
+        params.y = clamp(params.y, minY(), maxY());
+        windowManager.updateViewLayout(root, params);
+        AppPrefs.get(this).edit().putBoolean(KEY_DOCKED, true)
+                .putInt(KEY_DOCK_SIDE, side).apply();
+    }
+
+    private void undockPet() {
+        if (!docked || pet == null || root == null || params == null) return;
+        docked = false;
+        dockHandle.setVisibility(View.GONE);
+        pet.setVisibility(View.VISIBLE);
+        int savedX = AppPrefs.get(this).getInt(AppPrefs.KEY_DESK_PET_X, params.x);
+        // Come back inside the screen, not still stuck to the same grab edge.
+        int inset = dp(48);
+        params.x = clamp(savedX + (dockSide == EDGE_LEFT ? inset : -inset), minX(), maxX());
+        params.y = clamp(params.y, minY(), maxY());
+        windowManager.updateViewLayout(root, params);
+        AppPrefs.get(this).edit().putBoolean(KEY_DOCKED, false).apply();
+        savePosition();
+        pet.lookAtUser(1550L);
+        showBubble("我出来了。");
     }
 
     private void finishEdgeGrab() {
@@ -744,7 +842,7 @@ public class DeskPetService extends Service {
     private final Runnable idleLoop = new Runnable() {
         @Override public void run() {
             if (pet == null) return;
-            if (!dragging) {
+            if (!dragging && !docked) {
                 DeskPetEmbodiment.Snapshot body = sampleBody();
                 if (random.nextInt(body.idleTwitchDenominator()) == 0) pet.earTwitch();
                 if (watchMode && random.nextInt(9) == 0) {
@@ -839,10 +937,16 @@ public class DeskPetService extends Service {
     @Override public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         if (root == null || params == null || windowManager == null) return;
-        params.x = clamp(params.x, minX(), maxX());
         params.y = clamp(params.y, minY(), maxY());
+        if (docked) {
+            params.x = dockSide == EDGE_LEFT
+                    ? -overlayWidth() + dp(DOCK_TAB_WIDTH_DP)
+                    : getResources().getDisplayMetrics().widthPixels - dp(DOCK_TAB_WIDTH_DP);
+        } else {
+            params.x = clamp(params.x, minX(), maxX());
+        }
         windowManager.updateViewLayout(root, params);
-        savePosition();
+        if (!docked) savePosition();
     }
 
     @Override public void onDestroy() {
@@ -857,6 +961,7 @@ public class DeskPetService extends Service {
         pet = null;
         bubble = null;
         bubbleTail = null;
+        dockHandle = null;
         running = false;
         super.onDestroy();
     }
@@ -876,6 +981,9 @@ public class DeskPetService extends Service {
         Intent stop = new Intent(this, DeskPetService.class).setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(
                 this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Intent sleep = new Intent(this, DeskPetService.class).setAction(ACTION_SLEEP);
+        PendingIntent sleepPi = PendingIntent.getService(
+                this, 2, sleep, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
@@ -883,8 +991,9 @@ public class DeskPetService extends Service {
         return b.setSmallIcon(R.drawable.ic_heart_wave)
                 .setLargeIcon(largeIcon)
                 .setContentTitle("玄砚在桌面陪你")
-                .setContentText("拖到哪就待在哪；单击看你，双击切换状态")
+                .setContentText("靠左右边缘停一会儿可收起；轻点叫醒我")
                 .setContentIntent(openPi)
+                .addAction(0, "打盹 💤", sleepPi)
                 .addAction(0, "收回", stopPi)
                 .setOngoing(true)
                 .build();
