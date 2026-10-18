@@ -61,18 +61,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.3
-          path: android/Zhangxinchuang-public-v0.3.9.3.apk
+          name: aevren-android-v0.3.9.4
+          path: android/Zhangxinchuang-public-v0.3.9.4.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.3
-          name: 砚团 v0.3.9.3
+          tag_name: v0.3.9.4
+          name: 砚团 v0.3.9.4
           body: |
-            玄砚桌宠贴边露半只猫：透明半身预览取代绿色拉片，左右都可收起，轻触探出的猫恢复；保留睡眠、MCP 与上游同步功能。
+            修复玄砚桌宠贴边放大问题：半身猫按展开状态相同比例渲染，贴边立即进入睡眠并显示 Zzz，轻点恢复。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.3.apk
+          files: android/Zhangxinchuang-public-v0.3.9.4.apk
           fail_on_unmatched_files: true

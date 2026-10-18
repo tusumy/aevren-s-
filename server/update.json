@@ -1,10 +1,11 @@
 {
-  "latest_version_name": "0.3.9.3",
-  "latest_version_code": 30903,
-  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.3/Zhangxinchuang-public-v0.3.9.3.apk",
+  "latest_version_name": "0.3.9.4",
+  "latest_version_code": 30904,
+  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.4/Zhangxinchuang-public-v0.3.9.4.apk",
   "sha256": "",
   "required": false,
   "notes": [
+    "玄砚贴边时保持原比例，只露半身，不会再放大；进入屏幕边缘立即默认睡眠，闭眼带 Zzz。",
     "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。",
     "玄砚桌宠：拖至左右屏幕边缘松手即可收起；收起后窗口真的缩为 20dp 宽的窄拉片，轻点重新展开。",
     "保留玄砚桌宠、侧边缩回与睡眠动画。",
@@ -12,6 +13,7 @@
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "changelog": [
+    "玄砚贴边时保持原比例，只露半身，不会再放大；进入屏幕边缘立即默认睡眠，闭眼带 Zzz。",
     "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。",
     "玄砚桌宠：拖至左右屏幕边缘松手即可收起；收起后窗口真的缩为 20dp 宽的窄拉片，轻点重新展开。",
     "保留玄砚桌宠、侧边缩回与睡眠动画。",
@@ -19,6 +21,7 @@
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "release_notes": [
+    "玄砚贴边时保持原比例，只露半身，不会再放大；进入屏幕边缘立即默认睡眠，闭眼带 Zzz。",
     "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。",
     "玄砚桌宠：拖至左右屏幕边缘松手即可收起；收起后窗口真的缩为 20dp 宽的窄拉片，轻点重新展开。",
     "保留玄砚桌宠、侧边缩回与睡眠动画。",

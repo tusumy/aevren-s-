@@ -85,8 +85,8 @@ public class DeskPetService extends Service {
     private static final int EDGE_STICKY_RELEASE_DP = 34;
     private static final int EDGE_PULL_AWAY_DP = 28;
     private static final int EDGE_STRUGGLE_GAP_MS = 105;
-    private static final int DOCK_PEEK_WIDTH_DP = 72;
-    private static final int DOCK_PEEK_HEIGHT_DP = 96;
+    private static final int DOCK_PEEK_WIDTH_DP = 60;
+    private static final int DOCK_PEEK_HEIGHT_DP = 92;
     private static final int EXPANDED_WIDTH_DP = 150;
     private static final int EXPANDED_HEIGHT_DP = 132;
 
@@ -563,7 +563,7 @@ public class DeskPetService extends Service {
         pet.setRotation(0f);
         pet.setScaleX(1f);
         pet.setScaleY(1f);
-        boolean alreadySleeping = manualNap;
+        manualNap = true;
         pet.sleepNow();
         pet.setVisibility(View.GONE);
         int centerY = params.y + params.height / 2;
@@ -574,11 +574,11 @@ public class DeskPetService extends Service {
         params.x = side == EDGE_LEFT ? 0 : screenW - params.width;
         params.y = clamp(centerY - params.height / 2, 0, Math.max(0, screenH - params.height));
         dockPreview.setSide(side);
+        // Retracting into the screen is always an instant nap, not a delayed nap.
+        dockPreview.sleepNow();
         dockPreview.setVisibility(View.VISIBLE);
         dockPreview.setAlpha(0f);
         dockPreview.setTranslationX(side == EDGE_LEFT ? -dp(17) : dp(17));
-        if (alreadySleeping) dockPreview.sleepNow();
-        else dockPreview.scheduleSleep();
         windowManager.updateViewLayout(root, params);
         dockPreview.animate().alpha(1f).translationX(0f).setDuration(220L).start();
         AppPrefs.get(this).edit().putBoolean(KEY_DOCKED, true)
@@ -706,11 +706,15 @@ public class DeskPetService extends Service {
             if (frame == null || frame.isRecycled()) return;
             Rect source = cropHalf(frame);
             float w = getWidth(), h = getHeight();
-            float scale = Math.min(w / source.width(), h / source.height());
+            // Preserve the exact pixel-to-dp scale used by the 138 x 92dp full pet.
+            // Fitting a half sprite to the whole dock rectangle enlarged the cat.
+            float normalW = dp(EXPANDED_WIDTH_DP - 12) * .97f;
+            float normalH = dp(92) * .945f;
+            float scale = Math.min(normalW / frame.getWidth(), normalH / frame.getHeight());
             float drawW = source.width() * scale;
             float drawH = source.height() * scale;
             float x = leftSide ? 0f : w - drawW;
-            float y = (h - drawH) / 2f + (float) Math.sin(breath) * 0.7f;
+            float y = (h - drawH) / 2f + (float) Math.sin(breath) * dp(1) * .65f;
             target.set(x, y, x + drawW, y + drawH);
             canvas.drawBitmap(frame, source, target, imagePaint);
             if (asleep) {
