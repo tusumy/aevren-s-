@@ -7,6 +7,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.os.Handler;
 import android.view.MotionEvent;
 import android.view.View;
@@ -24,6 +25,7 @@ public class DeskPetView extends View {
 
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint sleepPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Handler handler = new Handler();
     private final Random random = new Random();
     private final Bitmap cat;
@@ -54,6 +56,9 @@ public class DeskPetView extends View {
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setStrokeJoin(Paint.Join.ROUND);
+        sleepPaint.setColor(0xFF78B89A);
+        sleepPaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        sleepPaint.setTextAlign(Paint.Align.CENTER);
         handler.post(blinkLoop);
         handler.post(breatheLoop);
         handler.post(ambientLoop);
@@ -153,6 +158,19 @@ public class DeskPetView extends View {
         edgeLookDurationMs = Math.max(650L, lookMs);
         invalidate();
         handler.postDelayed(edgeRevealStep, Math.max(0L, pauseMs));
+    }
+
+    /** Explicit nap, also used when tucked behind the screen edge. A tap wakes him. */
+    public void sleepNow() {
+        if (released) return;
+        handler.removeCallbacks(goToSleep);
+        handler.removeCallbacks(stopLooking);
+        looking = false;
+        peeking = false;
+        asleep = true;
+        state = STATE_SLEEP;
+        earTwitch = 0f;
+        invalidate();
     }
 
     public void release() {
@@ -295,7 +313,20 @@ public class DeskPetView extends View {
             canvas.drawBitmap(cat, null, destination, imagePaint);
             imagePaint.setAlpha(255);
         }
+        if (asleep && !edgeGrabbed && !edgeRevealing) drawSleepMarks(canvas, w, h);
         canvas.restore();
+    }
+
+    private void drawSleepMarks(Canvas canvas, float w, float h) {
+        // Three tiny floating Zs make the existing breathing/closed-eye state readable.
+        sleepPaint.setAlpha(Math.round(155 + 80 * breath));
+        sleepPaint.setTextSize(h * .13f);
+        canvas.drawText("z", w * .76f, h * .37f - breath * h * .018f, sleepPaint);
+        sleepPaint.setTextSize(h * .17f);
+        canvas.drawText("z", w * .85f, h * .27f - breath * h * .025f, sleepPaint);
+        sleepPaint.setTextSize(h * .21f);
+        canvas.drawText("Z", w * .93f, h * .16f - breath * h * .031f, sleepPaint);
+        sleepPaint.setAlpha(255);
     }
 
     private void drawAttentionMarks(Canvas canvas, float w, float h) {
