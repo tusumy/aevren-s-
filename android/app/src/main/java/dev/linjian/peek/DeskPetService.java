@@ -618,6 +618,10 @@ public class DeskPetService extends Service {
      * This makes a true peeking silhouette, with a transparent background.
      */
     private static final class DockPeekView extends View {
+        private int dp(int value) {
+            return Math.round(value * getResources().getDisplayMetrics().density);
+        }
+
         private final Bitmap awake;
         private final Bitmap closed;
         private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
