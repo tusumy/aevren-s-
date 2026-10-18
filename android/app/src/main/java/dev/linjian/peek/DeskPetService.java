@@ -10,6 +10,10 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -54,7 +58,7 @@ public class DeskPetService extends Service {
     private DeskPetView pet;
     private TextView bubble;
     private View bubbleTail;
-    private TextView dockHandle;
+    private DockPeekView dockPreview;
 
     private boolean dragging;
     private float downRawX, downRawY;
@@ -81,8 +85,8 @@ public class DeskPetService extends Service {
     private static final int EDGE_STICKY_RELEASE_DP = 34;
     private static final int EDGE_PULL_AWAY_DP = 28;
     private static final int EDGE_STRUGGLE_GAP_MS = 105;
-    private static final int DOCK_TAB_WIDTH_DP = 20;
-    private static final int DOCK_TAB_HEIGHT_DP = 54;
+    private static final int DOCK_PEEK_WIDTH_DP = 72;
+    private static final int DOCK_PEEK_HEIGHT_DP = 96;
     private static final int EXPANDED_WIDTH_DP = 150;
     private static final int EXPANDED_HEIGHT_DP = 132;
 
@@ -186,6 +190,7 @@ public class DeskPetService extends Service {
         if (intent != null && ACTION_SLEEP.equals(intent.getAction()) && pet != null) {
             manualNap = true;
             pet.sleepNow();
+            if (docked && dockPreview != null) dockPreview.sleepNow();
             if (!docked) showBubble("……困了。");
         }
         return START_STICKY;
@@ -248,17 +253,13 @@ public class DeskPetService extends Service {
         root.addView(pet, petLp);
         pet.setOnTouchListener(this::onTouch);
 
-        // Collapsed mode uses a real 20dp-wide window, not a huge offscreen overlay.
-        // This also works on Android skins that clamp partially offscreen windows.
-        dockHandle = new TextView(this);
-        dockHandle.setTextColor(0xFF438B6C);
-        dockHandle.setTextSize(18f);
-        dockHandle.setGravity(Gravity.CENTER);
-        dockHandle.setIncludeFontPadding(false);
-        dockHandle.setContentDescription("点一下让玄砚从屏幕边缘出来");
-        dockHandle.setVisibility(View.GONE);
-        dockHandle.setOnClickListener(v -> undockPet());
-        root.addView(dockHandle, new FrameLayout.LayoutParams(
+        // Dock mode uses the same cat sprite cropped to its visible half.
+        // No placeholder tab, arrow or unrelated avatar.
+        dockPreview = new DockPeekView(this);
+        dockPreview.setVisibility(View.GONE);
+        dockPreview.setContentDescription("半只玄砚探出屏幕，点一下叫我出来");
+        dockPreview.setOnClickListener(v -> undockPet());
+        root.addView(dockPreview, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -294,7 +295,7 @@ public class DeskPetService extends Service {
             pet = null;
             bubble = null;
             bubbleTail = null;
-            dockHandle = null;
+            dockPreview = null;
             stopSelf();
         }
     }
@@ -540,9 +541,9 @@ public class DeskPetService extends Service {
         scheduleHoldReaction();
     }
 
-    /** Collapse the entire overlay window to a slim edge tab. */
+    /** Show exactly half the real pet against the edge, with no overlay tab. */
     private void dockToSide(int side) {
-        if (root == null || windowManager == null || params == null || dockHandle == null) return;
+        if (root == null || windowManager == null || params == null || dockPreview == null) return;
         if (side != EDGE_LEFT && side != EDGE_RIGHT) side = EDGE_RIGHT;
         dockSide = side;
         docked = true;
@@ -562,28 +563,24 @@ public class DeskPetService extends Service {
         pet.setRotation(0f);
         pet.setScaleX(1f);
         pet.setScaleY(1f);
-        manualNap = true;
+        boolean alreadySleeping = manualNap;
         pet.sleepNow();
         pet.setVisibility(View.GONE);
-        int centerY = params.y + (params.height > 0 ? params.height : dp(EXPANDED_HEIGHT_DP)) / 2;
+        int centerY = params.y + params.height / 2;
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int screenH = getResources().getDisplayMetrics().heightPixels;
-        params.width = dp(DOCK_TAB_WIDTH_DP);
-        params.height = dp(DOCK_TAB_HEIGHT_DP);
+        params.width = dp(DOCK_PEEK_WIDTH_DP);
+        params.height = dp(DOCK_PEEK_HEIGHT_DP);
         params.x = side == EDGE_LEFT ? 0 : screenW - params.width;
         params.y = clamp(centerY - params.height / 2, 0, Math.max(0, screenH - params.height));
-        // Square at the screen edge, softly rounded toward the actual screen content.
-        GradientDrawable tab = new GradientDrawable();
-        tab.setColor(0xDDF3FFF7);
-        tab.setStroke(dp(1), 0xBB9AC9B1);
-        float r = dp(14);
-        tab.setCornerRadii(side == EDGE_LEFT
-                ? new float[]{0, 0, r, r, r, r, 0, 0}
-                : new float[]{r, r, 0, 0, 0, 0, r, r});
-        dockHandle.setBackground(tab);
-        dockHandle.setText(side == EDGE_LEFT ? "›" : "‹");
-        dockHandle.setVisibility(View.VISIBLE);
+        dockPreview.setSide(side);
+        dockPreview.setVisibility(View.VISIBLE);
+        dockPreview.setAlpha(0f);
+        dockPreview.setTranslationX(side == EDGE_LEFT ? -dp(17) : dp(17));
+        if (alreadySleeping) dockPreview.sleepNow();
+        else dockPreview.scheduleSleep();
         windowManager.updateViewLayout(root, params);
+        dockPreview.animate().alpha(1f).translationX(0f).setDuration(220L).start();
         AppPrefs.get(this).edit().putBoolean(KEY_DOCKED, true)
                 .putInt(KEY_DOCK_SIDE, side).apply();
     }
@@ -601,7 +598,9 @@ public class DeskPetService extends Service {
                 : Math.max(0, screenW - params.width - dp(12));
         params.y = clamp(centerY - params.height / 2, minY(),
                 Math.min(maxY(), Math.max(minY(), screenH - params.height)));
-        dockHandle.setVisibility(View.GONE);
+        dockPreview.animate().cancel();
+        dockPreview.cancelSleep();
+        dockPreview.setVisibility(View.GONE);
         pet.setVisibility(View.VISIBLE);
         pet.setAlpha(0f);
         pet.setTranslationX(dockSide == EDGE_LEFT ? -dp(28) : dp(28));
@@ -611,6 +610,116 @@ public class DeskPetService extends Service {
         pet.animate().alpha(1f).translationX(0f).setDuration(230L).start();
         pet.lookAtUser(1550L);
         showBubble("我出来了。");
+    }
+
+    /**
+     * The docked window stays fully on screen (some ROMs clamp offscreen overlays).
+     * Instead we render just the outward-facing half of the *actual* cat sprite.
+     * This makes a true peeking silhouette, with a transparent background.
+     */
+    private static final class DockPeekView extends View {
+        private final Bitmap awake;
+        private final Bitmap closed;
+        private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final Paint sleepMark = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF target = new RectF();
+        private final Rect awakeBounds;
+        private final Rect closedBounds;
+        private boolean leftSide;
+        private boolean asleep;
+        private float breath;
+        private boolean released;
+        private final Handler animationHandler = new Handler();
+        private final Runnable nap = () -> { asleep = true; invalidate(); };
+        private final Runnable breathe = new Runnable() {
+            @Override public void run() {
+                if (released) return;
+                breath += .21f;
+                invalidate();
+                animationHandler.postDelayed(this, 230L);
+            }
+        };
+
+        DockPeekView(android.content.Context context) {
+            super(context);
+            awake = BitmapFactory.decodeResource(getResources(), R.drawable.pet_xuanyan_fluffy);
+            closed = BitmapFactory.decodeResource(getResources(), R.drawable.pet_xuanyan_fluffy_closed);
+            awakeBounds = visibleBounds(awake);
+            closedBounds = visibleBounds(closed);
+            sleepMark.setColor(0xFF6ABF91);
+            sleepMark.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            animationHandler.post(breathe);
+        }
+
+        void setSide(int side) {
+            leftSide = side == EDGE_LEFT;
+            asleep = false;
+            cancelSleep();
+            invalidate();
+        }
+        void scheduleSleep() {
+            asleep = false;
+            cancelSleep();
+            animationHandler.postDelayed(nap, 18000L);
+            invalidate();
+        }
+        void sleepNow() {
+            cancelSleep();
+            asleep = true;
+            invalidate();
+        }
+        void cancelSleep() { animationHandler.removeCallbacks(nap); }
+        void release() {
+            released = true;
+            animationHandler.removeCallbacksAndMessages(null);
+        }
+
+        /** Scan fur bounds once per bitmap, not on every animation frame. */
+        private Rect visibleBounds(Bitmap frame) {
+            if (frame == null) return new Rect(0, 0, 1, 1);
+            int w = frame.getWidth(), h = frame.getHeight();
+            int left = w, right = 0, top = h, bottom = 0;
+            for (int y = 0; y < h; y += 3) {
+                for (int x = 0; x < w; x += 3) {
+                    if ((frame.getPixel(x, y) >>> 24) > 30) {
+                        left = Math.min(left, x);
+                        right = Math.max(right, x);
+                        top = Math.min(top, y);
+                        bottom = Math.max(bottom, y);
+                    }
+                }
+            }
+            if (right <= left || bottom <= top) return new Rect(0, 0, w, h);
+            return new Rect(left, top, Math.min(w, right + 1), Math.min(h, bottom + 1));
+        }
+
+        private Rect cropHalf(Bitmap frame) {
+            Rect b = frame == closed ? closedBounds : awakeBounds;
+            int mid = (b.left + b.right) / 2;
+            return leftSide ? new Rect(mid, b.top, b.right, b.bottom)
+                    : new Rect(b.left, b.top, mid, b.bottom);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            Bitmap frame = asleep ? closed : awake;
+            if (frame == null || frame.isRecycled()) return;
+            Rect source = cropHalf(frame);
+            float w = getWidth(), h = getHeight();
+            float scale = Math.min(w / source.width(), h / source.height());
+            float drawW = source.width() * scale;
+            float drawH = source.height() * scale;
+            float x = leftSide ? 0f : w - drawW;
+            float y = (h - drawH) / 2f + (float) Math.sin(breath) * 0.7f;
+            target.set(x, y, x + drawW, y + drawH);
+            canvas.drawBitmap(frame, source, target, imagePaint);
+            if (asleep) {
+                sleepMark.setTextSize(h * .13f);
+                sleepMark.setAlpha(175);
+                canvas.drawText("z", leftSide ? w * .73f : w * .16f, h * .19f, sleepMark);
+                sleepMark.setAlpha(255);
+            }
+        }
     }
 
     private void finishEdgeGrab() {
@@ -976,7 +1085,7 @@ public class DeskPetService extends Service {
         params.y = clamp(params.y, minY(), maxY());
         if (docked) {
             params.x = dockSide == EDGE_LEFT ? 0
-                    : getResources().getDisplayMetrics().widthPixels - dp(DOCK_TAB_WIDTH_DP);
+                    : getResources().getDisplayMetrics().widthPixels - dp(DOCK_PEEK_WIDTH_DP);
         } else {
             params.x = clamp(params.x, minX(), maxX());
         }
@@ -996,7 +1105,8 @@ public class DeskPetService extends Service {
         pet = null;
         bubble = null;
         bubbleTail = null;
-        dockHandle = null;
+        if (dockPreview != null) dockPreview.release();
+        dockPreview = null;
         running = false;
         super.onDestroy();
     }
@@ -1026,7 +1136,7 @@ public class DeskPetService extends Service {
         return b.setSmallIcon(R.drawable.ic_heart_wave)
                 .setLargeIcon(largeIcon)
                 .setContentTitle("玄砚在桌面陪你")
-                .setContentText("拖向左右边缘松手就藏起来，轻点小拉片叫我")
+                .setContentText("拖向左右边缘，露半只小猫；点猫叫我出来")
                 .setContentIntent(openPi)
                 .addAction(0, "打盹 💤", sleepPi)
                 .addAction(0, "收回", stopPi)

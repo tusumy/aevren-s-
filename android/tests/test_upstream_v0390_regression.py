@@ -14,10 +14,12 @@ def test_selective_sync():
     wallet = source("android/app/src/main/java/dev/linjian/peek/WalletActivity.java")
     companion = source("android/app/src/main/java/dev/linjian/peek/CompanionService.java")
     assert "dockToSide(" in pet and "undockPet(" in pet
-    assert "DOCK_TAB_WIDTH_DP = 20" in pet and "DOCK_TAB_HEIGHT_DP = 54" in pet
-    assert "params.width = dp(DOCK_TAB_WIDTH_DP)" in pet
-    assert "params.height = dp(DOCK_TAB_HEIGHT_DP)" in pet
+    assert "DOCK_PEEK_WIDTH_DP = 72" in pet and "DOCK_PEEK_HEIGHT_DP = 96" in pet
+    assert "params.width = dp(DOCK_PEEK_WIDTH_DP)" in pet
+    assert "params.height = dp(DOCK_PEEK_HEIGHT_DP)" in pet
     assert "params.x = side == EDGE_LEFT ? 0 : screenW - params.width" in pet
+    assert "private static final class DockPeekView" in pet
+    assert "visibleBounds(awake)" in pet and "cropHalf(frame)" in pet
     assert "draggedIntoSide" in pet and "outwardSwipe" in pet
     assert "drawSleepMarks(" in view
     assert "sanitizeMcpRequestBody(req.body)" in mcp
@@ -26,8 +28,8 @@ def test_selective_sync():
     assert "diary_annotation_whitelist_fix" in server
     assert "notifyWalletUpdated(ctx)" in companion
     assert "walletUpdatedReceiver" in wallet
-    assert 'android:versionCode="30902"' in source("android/app/src/main/AndroidManifest.xml")
-    assert 'APP_VERSION_CODE = 30902' in source("android/app/src/main/java/dev/linjian/peek/AppPrefs.java")
+    assert 'android:versionCode="30903"' in source("android/app/src/main/AndroidManifest.xml")
+    assert 'APP_VERSION_CODE = 30903' in source("android/app/src/main/java/dev/linjian/peek/AppPrefs.java")
 
 if __name__ == "__main__":
     test_selective_sync()

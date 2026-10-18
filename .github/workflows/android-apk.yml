@@ -61,18 +61,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.2
-          path: android/Zhangxinchuang-public-v0.3.9.2.apk
+          name: aevren-android-v0.3.9.3
+          path: android/Zhangxinchuang-public-v0.3.9.3.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.2
-          name: 砚团 v0.3.9.2
+          tag_name: v0.3.9.3
+          name: 砚团 v0.3.9.3
           body: |
-            修复贴边收纳：拖到左右屏幕边缘即缩进，悬浮窗缩成 20dp 宽小拉片；保留玄砚桌宠睡眠、MCP 与上游同步功能。
+            玄砚桌宠贴边露半只猫：透明半身预览取代绿色拉片，左右都可收起，轻触探出的猫恢复；保留睡眠、MCP 与上游同步功能。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.2.apk
+          files: android/Zhangxinchuang-public-v0.3.9.3.apk
           fail_on_unmatched_files: true

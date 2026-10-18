@@ -1,22 +1,25 @@
 {
-  "latest_version_name": "0.3.9.2",
-  "latest_version_code": 30902,
-  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.2/Zhangxinchuang-public-v0.3.9.2.apk",
+  "latest_version_name": "0.3.9.3",
+  "latest_version_code": 30903,
+  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.3/Zhangxinchuang-public-v0.3.9.3.apk",
   "sha256": "",
   "required": false,
   "notes": [
+    "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。",
     "玄砚桌宠：拖至左右屏幕边缘松手即可收起；收起后窗口真的缩为 20dp 宽的窄拉片，轻点重新展开。",
     "保留玄砚桌宠、侧边缩回与睡眠动画。",
     "从掌心窗上游 v0.3.9.0 选择合入 MCP 初始化兼容、截图可读、小金库手机端确认与日记批注工具白名单。",
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "changelog": [
+    "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。",
     "玄砚桌宠：拖至左右屏幕边缘松手即可收起；收起后窗口真的缩为 20dp 宽的窄拉片，轻点重新展开。",
     "保留玄砚桌宠、侧边缩回与睡眠动画。",
     "从掌心窗上游 v0.3.9.0 选择合入 MCP 初始化兼容、截图可读、小金库手机端确认与日记批注工具白名单。",
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "release_notes": [
+    "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。",
     "玄砚桌宠：拖至左右屏幕边缘松手即可收起；收起后窗口真的缩为 20dp 宽的窄拉片，轻点重新展开。",
     "保留玄砚桌宠、侧边缩回与睡眠动画。",
     "从掌心窗上游 v0.3.9.0 选择合入 MCP 初始化兼容、截图可读、小金库手机端确认与日记批注工具白名单。",
