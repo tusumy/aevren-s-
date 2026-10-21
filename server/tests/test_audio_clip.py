@@ -52,11 +52,11 @@ class PlaybackClipContractTest(unittest.TestCase):
 
     def test_requires_authorization(self):
         with self.assertRaises(HTTPError) as error:
-            self.post("/api/audio/clip", b"RIFF" + b"\\0" * 4 + b"WAVE" + b"\\0" * 40, token="wrong")
+            self.post("/api/audio/clip", b"RIFF" + bytes(4) + b"WAVE" + bytes(4)0, token="wrong")
         self.assertEqual(error.exception.code, 403)
 
     def test_clip_roundtrip_and_ram_only(self):
-        clip = b"RIFF" + b"\\0" * 4 + b"WAVE" + b"\\0" * 128
+        clip = b"RIFF" + bytes(4) + b"WAVE" + bytes(128)
         code, body = self.post("/api/audio/clip", clip)
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
@@ -67,7 +67,7 @@ class PlaybackClipContractTest(unittest.TestCase):
         self.assertFalse((Path(self.temp.name) / "audio").exists())
 
     def test_stale_clip_is_rejected(self):
-        clip = b"RIFF" + b"\\0" * 4 + b"WAVE" + b"\\0" * 128
+        clip = b"RIFF" + bytes(4) + b"WAVE" + bytes(128)
         self.post("/api/audio/clip", clip, device="A")
         with self.state.audio_lock:
             self.state.audio_clips["A"]["mtime"] = time.time() - 181
