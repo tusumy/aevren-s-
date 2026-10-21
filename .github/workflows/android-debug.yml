@@ -5,6 +5,9 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'server/**'
+      - 'mcp/server.js'
+      - 'docs/listen-together.md'
       - '.github/workflows/android-debug.yml'
 
 permissions:
