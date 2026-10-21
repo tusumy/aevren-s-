@@ -219,6 +219,9 @@ class State:
         self.data_dir = Path(data_dir).resolve()
         self.shots_dir = self.data_dir / "screenshots"
         self.shots_dir.mkdir(parents=True, exist_ok=True)
+        # Explicit user-initiated short playback clips. RAM-only, 3-minute expiry.
+        self.audio_lock = Lock()
+        self.audio_clips: dict[str, dict] = {}
         self.commands: list[dict] = []
         self.command_history: dict[str, dict] = {}
         self.commands_lock = Lock()
@@ -486,6 +489,20 @@ class Handler(BaseHTTPRequestHandler):
                 self.state.command_history[cmd.get("id", "")] = dict(cmd)
             self._json(200, {"ok": True, "command": cmd})
             return
+        if path in ("/api/audio/latest.json", "/api/audio/latest"):
+            if not self._require_token(): return
+            device_id = (qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE)[:64]
+            with self.state.audio_lock:
+                now = time.time()
+                self.state.audio_clips = {k: v for k, v in self.state.audio_clips.items() if now - v["mtime"] <= 180}
+                clip = self.state.audio_clips.get(device_id)
+            if not clip:
+                self._json(404, {"ok": False, "error": "NO_RECENT_AUDIO", "message": "请先在手机端点击一起看并授权录取12秒声音"}); return
+            if path.endswith(".json"):
+                self._json(200, {"ok": True, "device_id": device_id, "mtime": clip["mtime"], "size": len(clip["data"]), "duration_seconds": clip["duration"], "expires_in_seconds": max(0, round(180 - (time.time() - clip["mtime"])))})
+            else:
+                self._send_bytes(200, clip["data"], "audio/wav")
+            return
         if path == "/api/latest.json":
             if not self._require_token(): return
             shot = self.state.latest_shot()
@@ -616,6 +633,20 @@ class Handler(BaseHTTPRequestHandler):
             self.state.unlock_requests.append(data)
             self.state.unlock_requests = self.state.unlock_requests[-50:]
             self._json(200, {"ok": True, "request": data, "count": len(self.state.unlock_requests)}); return
+        if path == "/api/audio/clip":
+            if not self._require_token(): return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length < 44 or length > 1024 * 1024:
+                self._json(413, {"ok": False, "error": "AUDIO_SIZE_INVALID"}); return
+            data = self.rfile.read(length)
+            if len(data) != length or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+                self._json(400, {"ok": False, "error": "AUDIO_FORMAT_INVALID"}); return
+            device_id = (self.headers.get("X-Device-Id") or DEFAULT_DEVICE)[:64]
+            duration = max(0, round((len(data) - 44) / 32000, 2))
+            with self.state.audio_lock:
+                self.state.audio_clips[device_id] = {"mtime": time.time(), "data": data, "duration": duration}
+            self._json(200, {"ok": True, "device_id": device_id, "duration_seconds": duration, "expires_in_seconds": 180})
+            return
         if path == "/api/screenshot":
             if not self._require_token(): return
             self._handle_screenshot(); return
