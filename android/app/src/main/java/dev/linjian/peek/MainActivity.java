@@ -2507,7 +2507,7 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_LISTEN_PROJECTION) {
             if (resultCode != RESULT_OK || data == null) {
-                Toast.makeText(this, "已取消本次收音授权", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "已取消本次画面和声音授权", Toast.LENGTH_SHORT).show();
                 return;
             }
             Intent capture = new Intent(this, AudioClipService.class)
@@ -2517,10 +2517,10 @@ public class MainActivity extends Activity {
             try {
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(capture);
                 else startService(capture);
-                Toast.makeText(this, "砚团开始听12秒，结束后自动上传", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "砚团开始看12秒，完成后上传关键画面与声音", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
                 DebugState.append(this, "一起看启动失败：" + ScreenshotService.shortMsg(e));
-                Toast.makeText(this, "声音捕获启动失败，请查看日志", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "画面和声音捕获启动失败，请查看日志", Toast.LENGTH_LONG).show();
             }
             return;
         }
@@ -2578,7 +2578,7 @@ public class MainActivity extends Activity {
             startActivityForResult(manager.createScreenCaptureIntent(), REQ_LISTEN_PROJECTION);
         } catch (Exception e) {
             DebugState.append(this, "一起看授权窗口无法开启：" + ScreenshotService.shortMsg(e));
-            Toast.makeText(this, "无法打开系统声音录制授权", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "无法打开系统屏幕录制授权", Toast.LENGTH_LONG).show();
         }
     }
 
