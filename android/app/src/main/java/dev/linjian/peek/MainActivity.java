@@ -105,8 +105,8 @@ public class MainActivity extends Activity {
     private static final int REQ_DIARY_COVER = 230724;
     private static final int REQ_DIARY_EXPORT = 230725;
     private static final int REQ_DIARY_IMPORT = 230726;
-    private static final int REQ_LISTEN_AUDIO_PERMISSION = 230727;
-    private static final int REQ_LISTEN_PROJECTION = 230728;
+    private static final int REQ_LISTEN_AUDIO_PERMISSION = 2727;
+    private static final int REQ_LISTEN_PROJECTION = 2728;
     private static boolean openingShownForProcess = false;
     private SoftAvatarView companionAvatarView;
     private ImageView companionRestArt;
