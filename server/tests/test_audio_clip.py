@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regression tests for opt-in playback clips. Standard library only."""
+import base64
 import json
 import os
 import sys
@@ -83,6 +84,56 @@ class PlaybackClipContractTest(unittest.TestCase):
             self.get("/api/audio/latest.json?device_id=someone-else")
         self.assertEqual(error.exception.code, 404)
 
+
+    def sample_video(self, offsets=(2100, 4300)):
+        jpeg = bytes((255, 216, 255)) + bytes(200) + bytes((255, 217))
+        return json.dumps({
+            "capture_id": "manual-12s-unit-test",
+            "captured_at_ms": 1792600000000,
+            "duration_seconds": 12,
+            "frames": [{"offset_ms": t, "jpeg_b64": base64.b64encode(jpeg).decode("ascii")} for t in offsets]
+        }).encode("utf-8")
+
+    def test_video_roundtrip_and_privacy(self):
+        code, body = self.post("/api/video/clip", self.sample_video(), device="A")
+        self.assertEqual((code, body["frame_count"]), (200, 2))
+        code, raw = self.get("/api/video/latest?device_id=A")
+        clip = json.loads(raw)
+        self.assertEqual(clip["frame_count"], 2)
+        self.assertEqual([x["offset_ms"] for x in clip["frames"]], [2100, 4300])
+        self.assertTrue(clip["frames"][0]["jpeg_b64"])
+        code, meta = self.get("/api/video/latest.json?device_id=A")
+        self.assertEqual(json.loads(meta)["offsets_ms"], [2100, 4300])
+        self.assertNotIn("frames", json.loads(meta))
+        with self.assertRaises(HTTPError) as error:
+            self.get("/api/video/latest?device_id=B")
+        self.assertEqual(error.exception.code, 404)
+        self.assertFalse((Path(self.temp.name) / "video").exists())
+
+    def test_video_expiry_and_authorization(self):
+        with self.assertRaises(HTTPError) as error:
+            self.post("/api/video/clip", self.sample_video(), token="wrong")
+        self.assertEqual(error.exception.code, 403)
+        self.post("/api/video/clip", self.sample_video(), device="A")
+        with self.state.video_lock:
+            self.state.video_clips["A"]["mtime"] = time.time() - 181
+        with self.assertRaises(HTTPError) as error:
+            self.get("/api/video/latest?device_id=A")
+        self.assertEqual(error.exception.code, 404)
+
+    def test_video_rejects_invalid_order_and_jpeg(self):
+        with self.assertRaises(HTTPError) as error:
+            self.post("/api/video/clip", self.sample_video(offsets=(4300, 2100)))
+        self.assertEqual(error.exception.code, 400)
+        bad = json.loads(self.sample_video())
+        bad["frames"][0]["jpeg_b64"] = base64.b64encode(b"not-jpeg" * 30).decode("ascii")
+        with self.assertRaises(HTTPError) as error:
+            self.post("/api/video/clip", json.dumps(bad).encode("utf-8"))
+        self.assertEqual(error.exception.code, 400)
+        bad["frames"][0]["jpeg_b64"] = "!bad-base64"
+        with self.assertRaises(HTTPError) as error:
+            self.post("/api/video/clip", json.dumps(bad).encode("utf-8"))
+        self.assertEqual(error.exception.code, 400)
 
 if __name__ == "__main__":
     unittest.main()
