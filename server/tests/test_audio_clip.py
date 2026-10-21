@@ -52,7 +52,7 @@ class PlaybackClipContractTest(unittest.TestCase):
 
     def test_requires_authorization(self):
         with self.assertRaises(HTTPError) as error:
-            self.post("/api/audio/clip", b"RIFF" + bytes(4) + b"WAVE" + bytes(4)0, token="wrong")
+            self.post("/api/audio/clip", b"RIFF" + bytes(4) + b"WAVE" + bytes(40), token="wrong")
         self.assertEqual(error.exception.code, 403)
 
     def test_clip_roundtrip_and_ram_only(self):
