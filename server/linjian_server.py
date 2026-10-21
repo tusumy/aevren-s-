@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import calendar
 import json
 import os
@@ -687,13 +688,13 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("jpeg_size")
                     decoded = base64.b64decode(encoded, validate=True)
                     if not (100 <= len(decoded) <= 170 * 1024 and
-                            decoded[:3] == b"\\xff\\xd8\\xff" and decoded[-2:] == b"\\xff\\xd9"):
+                            decoded[:3] == bytes((255, 216, 255)) and decoded[-2:] == bytes((255, 217))):
                         raise ValueError("jpeg_format")
                     if not previous < offset <= duration * 1000 + 500:
                         raise ValueError("frame_order")
                     clean.append({"offset_ms": offset, "jpeg_b64": encoded})
                     previous = offset
-            except (ValueError, TypeError, KeyError, UnicodeError, OverflowError):
+            except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, binascii.Error):
                 self._json(400, {"ok": False, "error": "VIDEO_FORMAT_INVALID"}); return
             device_id = (self.headers.get("X-Device-Id") or DEFAULT_DEVICE)[:64]
             with self.state.video_lock:
