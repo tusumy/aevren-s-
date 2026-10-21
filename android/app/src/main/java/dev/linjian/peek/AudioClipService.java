@@ -49,11 +49,12 @@ public class AudioClipService extends Service {
             return START_NOT_STICKY;
         }
         if (!ACTION_START.equals(intent.getAction()) || Build.VERSION.SDK_INT < 29
-                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
-                || !capturing.compareAndSet(false, true)) {
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
+        // A second tap must never terminate an already running capture.
+        if (!capturing.compareAndSet(false, true)) return START_NOT_STICKY;
         createChannel();
         Notification notification = notification();
         try {
