@@ -17,17 +17,23 @@ import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * One-shot system-playback capture initiated only by a visible MainActivity consent dialog.
- * Never exposed through remote commands. No microphone fallback, no local audio file.
+ * One-shot synchronized system-playback and screen-frame capture, started by local Android consent.
+ * Never exposed through remote commands. No microphone fallback or local media files.
  */
 public class AudioClipService extends Service {
     public static final String ACTION_START = "dev.linjian.peek.LISTEN_TOGETHER_START";
@@ -64,7 +70,7 @@ public class AudioClipService extends Service {
                 startForeground(NOTIFICATION_ID, notification);
             }
         } catch (Exception e) {
-            DebugState.append(this, "一起看：启动录音通知失败 " + e.getClass().getSimpleName());
+            DebugState.append(this, "一起看：启动捕获通知失败 " + e.getClass().getSimpleName());
             capturing.set(false);
             stopSelf(startId);
             return START_NOT_STICKY;
@@ -77,8 +83,8 @@ public class AudioClipService extends Service {
 
     private void createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel c = new NotificationChannel(CHANNEL, "一起看·录取播放声音", NotificationManager.IMPORTANCE_LOW);
-            c.setDescription("仅在手机主人主动批准后录取12秒媒体播放声音");
+            NotificationChannel c = new NotificationChannel(CHANNEL, "一起看·录取短片段画面和声音", NotificationManager.IMPORTANCE_LOW);
+            c.setDescription("用户授权后截取12秒画面关键帧和媒体播放声音");
             ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(c);
         }
     }
@@ -88,8 +94,8 @@ public class AudioClipService extends Service {
         PendingIntent cancel = PendingIntent.getService(this, 782, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
-        return builder.setContentTitle("砚团正在听这段剧情")
-                .setContentText("正在录取12秒播放声音，结束后自动停止")
+        return builder.setContentTitle("砚团正在看这段剧情")
+                .setContentText("正在取12秒画面与声音，结束后自动停止")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_delete, "立即停止", cancel)
@@ -99,55 +105,109 @@ public class AudioClipService extends Service {
     private void recordOnce(int resultCode, Intent consentData, int startId) {
         MediaProjection projection = null;
         AudioRecord recorder = null;
+        VideoFrameSampler sampler = null;
         try {
             if (consentData == null || resultCode != android.app.Activity.RESULT_OK) {
-                throw new IllegalStateException("缺少屏幕声音授权");
+                throw new IllegalStateException("缺少屏幕录制授权");
             }
             MediaProjectionManager manager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
             projection = manager.getMediaProjection(resultCode, consentData);
             if (projection == null) throw new IllegalStateException("未获取系统录制权限");
-            AudioPlaybackCaptureConfiguration config = new AudioPlaybackCaptureConfiguration.Builder(projection)
-                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                    .build();
-            AudioFormat format = new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
-            int minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-            int bufferSize = Math.max(4096, minBuffer);
-            recorder = new AudioRecord.Builder().setAudioFormat(format)
-                    .setBufferSizeInBytes(bufferSize).setAudioPlaybackCaptureConfig(config).build();
-            if (recorder.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("音频录制无法初始化");
-            recorder.startRecording();
-            ByteArrayOutputStream pcm = new ByteArrayOutputStream(SAMPLE_RATE * SECONDS * 2);
-            byte[] buffer = new byte[4096];
+            // Android 14 requires registering an onStop callback before a VirtualDisplay is created.
+            projection.registerCallback(new MediaProjection.Callback() {
+                @Override public void onStop() { capturing.set(false); }
+            }, new Handler(Looper.getMainLooper()));
+            long captureStartedMs = System.currentTimeMillis();
             long end = System.nanoTime() + SECONDS * 1_000_000_000L;
+
+            try {
+                sampler = new VideoFrameSampler(this, projection);
+            } catch (Exception e) {
+                DebugState.append(this, "一起看：屏幕关键帧初始化失败 " + ScreenshotService.shortMsg(e));
+            }
+
+            ByteArrayOutputStream pcm = new ByteArrayOutputStream(SAMPLE_RATE * SECONDS * 2);
             boolean signal = false;
-            while (capturing.get() && System.nanoTime() < end && pcm.size() < SAMPLE_RATE * SECONDS * 2) {
-                int n = recorder.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
-                if (n < 0) throw new IllegalStateException("系统声音读取失败 " + n);
-                if (n == 0) continue;
-                // Zero or near-zero output usually means the player disallows playback capture.
-                for (int i = 0; i + 1 < n && !signal; i += 2) {
-                    int sample = (short) ((buffer[i] & 0xff) | (buffer[i + 1] << 8));
-                    if (Math.abs(sample) > 30) signal = true;
+            try {
+                AudioPlaybackCaptureConfiguration config = new AudioPlaybackCaptureConfiguration.Builder(projection)
+                        .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                        .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                        .build();
+                AudioFormat format = new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(SAMPLE_RATE).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
+                int minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+                if (minBuffer <= 0) throw new IllegalStateException("音频缓存不可用");
+                recorder = new AudioRecord.Builder().setAudioFormat(format)
+                        .setBufferSizeInBytes(Math.max(4096, minBuffer))
+                        .setAudioPlaybackCaptureConfig(config).build();
+                if (recorder.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("音频录制无法初始化");
+                recorder.startRecording();
+                byte[] buffer = new byte[4096];
+                while (capturing.get() && System.nanoTime() < end && pcm.size() < SAMPLE_RATE * SECONDS * 2) {
+                    int n = recorder.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+                    if (n < 0) throw new IllegalStateException("系统声音读取失败 " + n);
+                    if (n == 0) continue;
+                    for (int i = 0; i + 1 < n && !signal; i += 2) {
+                        int sample = (short) ((buffer[i] & 0xff) | (buffer[i + 1] << 8));
+                        if (Math.abs(sample) > 30) signal = true;
+                    }
+                    pcm.write(buffer, 0, n);
                 }
-                pcm.write(buffer, 0, n);
+            } catch (Exception e) {
+                // Playback capture can be disabled by a video app. Still collect visual frames.
+                DebugState.append(this, "一起看：声音不可用，继续采集画面：" + ScreenshotService.shortMsg(e));
+                while (capturing.get() && System.nanoTime() < end) {
+                    try { Thread.sleep(100); } catch (InterruptedException ignored) { break; }
+                }
+            } finally {
+                if (recorder != null) {
+                    try { recorder.stop(); } catch (Exception ignored) { }
+                    recorder.release();
+                    recorder = null;
+                }
+            }
+
+            JSONArray frames = new JSONArray();
+            if (sampler != null) {
+                frames = sampler.snapshot();
+                sampler.close();
+                sampler = null;
             }
             if (!capturing.get()) {
-                DebugState.append(this, "一起看：用户已停止本次收音");
-            } else if (pcm.size() < 3200 || !signal) {
-                DebugState.append(this, "一起看：没有可用的播放声音（可能被视频 App 禁止内录）");
+                DebugState.append(this, "一起看：用户或系统已停止本次画面与声音采集，不上传");
+                return;
+            }
+
+            // Upload two independent media types: silence must not discard usable frames.
+            if (frames.length() > 0) {
+                try {
+                    uploadFrames(frames, captureStartedMs);
+                    DebugState.append(this, "一起看：已上传 " + frames.length() + " 张关键帧");
+                } catch (Exception e) {
+                    DebugState.append(this, "一起看：画面上传失败 " + ScreenshotService.shortMsg(e));
+                }
             } else {
-                byte[] wav = asWav(pcm.toByteArray());
-                upload(wav);
-                DebugState.append(this, "一起看：已上传约 " + Math.round(pcm.size() / 32000f) + " 秒播放声音");
+                DebugState.append(this, "一起看：没有截到画面（可能是受保护的视频或屏幕）");
+            }
+            if (pcm.size() >= 3200 && signal) {
+                try {
+                    upload(asWav(pcm.toByteArray()));
+                    DebugState.append(this, "一起看：已上传约 " + Math.round(pcm.size() / 32000f) + " 秒播放声音");
+                } catch (Exception e) {
+                    DebugState.append(this, "一起看：声音上传失败 " + ScreenshotService.shortMsg(e));
+                }
+            } else {
+                DebugState.append(this, "一起看：无可用播放声音，仍可分析画面");
             }
         } catch (Exception e) {
             DebugState.append(this, "一起看失败：" + ScreenshotService.shortMsg(e));
             Log.w("ListenTogether", "capture failed", e);
         } finally {
             capturing.set(false);
+            if (sampler != null) {
+                try { sampler.close(); } catch (Exception ignored) { }
+            }
             if (recorder != null) {
                 try { recorder.stop(); } catch (Exception ignored) { }
                 recorder.release();
@@ -156,6 +216,32 @@ public class AudioClipService extends Service {
             stopForeground(true);
             stopSelf(startId);
         }
+    }
+
+    private void uploadFrames(JSONArray frames, long captureStartedMs) throws Exception {
+        JSONObject payload = new JSONObject();
+        payload.put("capture_id", UUID.randomUUID().toString());
+        payload.put("captured_at_ms", captureStartedMs);
+        payload.put("duration_seconds", SECONDS);
+        payload.put("frames", frames);
+        byte[] data = payload.toString().getBytes(StandardCharsets.UTF_8);
+        String endpoint = ScreenshotService.normalizeUrl(AppPrefs.server(this));
+        String token = AppPrefs.token(this);
+        if (endpoint.isEmpty() || token.isEmpty()) throw new IllegalStateException("请先配置服务器连接");
+        HttpURLConnection conn = (HttpURLConnection) new URL(endpoint + "/api/video/clip").openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(8000);
+        conn.setReadTimeout(12000);
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("X-Auth-Token", token);
+        conn.setRequestProperty("X-Device-Id", AppPrefs.device(this));
+        conn.setFixedLengthStreamingMode(data.length);
+        try {
+            try (OutputStream output = conn.getOutputStream()) { output.write(data); }
+            if (conn.getResponseCode() != 200)
+                throw new IllegalStateException("服务器视频帧上传失败 HTTP " + conn.getResponseCode());
+        } finally { conn.disconnect(); }
     }
 
     private void upload(byte[] audio) throws Exception {
