@@ -35,7 +35,7 @@ final class VideoFrameSampler implements AutoCloseable {
     private final Object lock = new Object();
     private final JSONArray frames = new JSONArray();
     private final long startedAt = SystemClock.elapsedRealtime();
-    private long lastFrameAt = -FRAME_INTERVAL_MS;
+    private long lastFrameAt = 0L;
     private boolean closed;
     private final ImageReader reader;
     private final VirtualDisplay display;
