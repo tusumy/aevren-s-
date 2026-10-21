@@ -306,7 +306,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="一起看：点击后由系统询问录制权限，仅录取12秒播放声音；部分视频平台禁止内录。"
+                        android:text="一起看：点击后由 Android 询问录屏权限，取12秒关键画面和播放声音；通知栏可停止。部分视频平台禁止内录或画面采集。"
                         android:textSize="11sp"
                         android:textColor="#FF7E928C"
                         android:layout_marginTop="10dp" />
@@ -314,7 +314,7 @@
                         android:id="@+id/listenTogetherButton"
                         android:layout_width="wrap_content"
                         android:layout_height="32dp"
-                        android:text="一起看 · 听12秒"
+                        android:text="一起看 · 录12秒"
                         android:textSize="11sp"
                         android:background="@drawable/pill_soft"
                         android:layout_marginTop="6dp" />
