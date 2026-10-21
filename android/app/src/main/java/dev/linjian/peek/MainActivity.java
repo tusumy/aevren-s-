@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
     private ImageView quickSeeIcon, quickGuardIcon;
     private TextView guidianSummaryText, guidianDetailText, guidianSettingsStatusText, guidianAvatarText, versionStatusText, updateChangelogText, licenseSummaryText;
     private Button toggleButton, accessibilityButton, usageAccessButton, testButton, openXhsButton, openTargetAppButton, homeButton, backButton, recentsButton, alarmTestButton, notifyTestButton, refreshLifeButton;
+    private Button listenTogetherButton;
     private Button addPackageButton, testPackageButton, sequenceTestButton, refreshGateButton, addGateAppButton, addWeatherLocationButton, setCurrentWeatherButton;
     private Button testGuidianButton, saveGuidianSettingsButton, chooseGuidianAvatarButton, guidianThemeDuskButton, guidianThemeCloudButton, guidianThemeBerryButton;
     private Button themeCreamButton, themeBlueButton, themePeachButton, themeNightButton, themeMintButton, themePurpleButton, drawerThemeButton, drawerNowStateButton, locationPermissionButton, overlayPermissionButton, notificationListenerButton;
@@ -104,6 +105,8 @@ public class MainActivity extends Activity {
     private static final int REQ_DIARY_COVER = 230724;
     private static final int REQ_DIARY_EXPORT = 230725;
     private static final int REQ_DIARY_IMPORT = 230726;
+    private static final int REQ_LISTEN_AUDIO_PERMISSION = 230727;
+    private static final int REQ_LISTEN_PROJECTION = 230728;
     private static boolean openingShownForProcess = false;
     private SoftAvatarView companionAvatarView;
     private ImageView companionRestArt;
@@ -149,6 +152,7 @@ public class MainActivity extends Activity {
         if (toggleButton != null) toggleButton.setOnClickListener(v -> { if (serviceRunning) stopCompanionService(); else startCompanionService(); });
         if (refreshLifeButton != null) refreshLifeButton.setOnClickListener(v -> { saveSettings(); updateUI(); Toast.makeText(this, "已刷新生活总览", Toast.LENGTH_SHORT).show(); });
         if (testButton != null) testButton.setOnClickListener(v -> testScreenshot());
+        if (listenTogetherButton != null) listenTogetherButton.setOnClickListener(v -> startListenTogether());
         if (openXhsButton != null) openXhsButton.setOnClickListener(v -> openPackage(AppPrefs.packageForApp(this, "小红书")));
         if (openTargetAppButton != null) openTargetAppButton.setOnClickListener(v -> openPackage(AppPrefs.homeTargetPackage(this)));
         if (homeButton != null) homeButton.setOnClickListener(v -> { ScreenshotService svc = ScreenshotService.getInstance(); toast(svc != null && svc.doHome()); });
@@ -217,7 +221,7 @@ public class MainActivity extends Activity {
         heroLabelText = findViewById(R.id.heroLabelText); overviewAdviceText = findViewById(R.id.overviewAdviceText); overviewSecondaryText = findViewById(R.id.overviewSecondaryText); overviewMetaText = findViewById(R.id.overviewMetaText); overviewBatteryText = findViewById(R.id.overviewBatteryText); overviewBatteryDetail = findViewById(R.id.overviewBatteryDetail); overviewAppText = findViewById(R.id.overviewAppText); overviewAppDetail = findViewById(R.id.overviewAppDetail); overviewScreenText = findViewById(R.id.overviewScreenText); overviewScreenDetail = findViewById(R.id.overviewScreenDetail); overviewWeatherText = findViewById(R.id.overviewWeatherText); overviewWeatherDetail = findViewById(R.id.overviewWeatherDetail); weatherLocationsText = findViewById(R.id.weatherLocationsText); themeText = findViewById(R.id.themeText); calendarSummaryText = findViewById(R.id.calendarSummaryText); calendarDetailText = findViewById(R.id.calendarDetailText);
         overviewBatteryLabel = findViewById(R.id.overviewBatteryLabel); overviewAppLabel = findViewById(R.id.overviewAppLabel); overviewScreenLabel = findViewById(R.id.overviewScreenLabel); overviewWeatherLabel = findViewById(R.id.overviewWeatherLabel); quickSeeTitle = findViewById(R.id.quickSeeTitle); quickSeeDetail = findViewById(R.id.quickSeeDetail); quickSeeArrow = findViewById(R.id.quickSeeArrow); quickGuardTitle = findViewById(R.id.quickGuardTitle); quickGuardDetail = findViewById(R.id.quickGuardDetail); quickGuardArrow = findViewById(R.id.quickGuardArrow); quickSeeIcon = findViewById(R.id.quickSeeIcon); quickGuardIcon = findViewById(R.id.quickGuardIcon);
         guidianSummaryText = findViewById(R.id.guidianSummaryText); guidianDetailText = findViewById(R.id.guidianDetailText); guidianSettingsStatusText = findViewById(R.id.guidianSettingsStatusText); guidianAvatarText = findViewById(R.id.guidianAvatarText); versionStatusText = findViewById(R.id.versionStatusText); updateChangelogText = findViewById(R.id.updateChangelogText); licenseSummaryText = findViewById(R.id.licenseSummaryText);
-        toggleButton = findViewById(R.id.toggleButton); accessibilityButton = findViewById(R.id.accessibilityButton); usageAccessButton = findViewById(R.id.usageAccessButton); testButton = findViewById(R.id.testButton); openXhsButton = findViewById(R.id.openXhsButton); openTargetAppButton = findViewById(R.id.openTargetAppButton); homeButton = findViewById(R.id.homeButton); backButton = findViewById(R.id.backButton); recentsButton = findViewById(R.id.recentsButton); alarmTestButton = findViewById(R.id.alarmTestButton); notifyTestButton = findViewById(R.id.notifyTestButton); refreshLifeButton = findViewById(R.id.refreshLifeButton);
+        toggleButton = findViewById(R.id.toggleButton); accessibilityButton = findViewById(R.id.accessibilityButton); usageAccessButton = findViewById(R.id.usageAccessButton); testButton = findViewById(R.id.testButton); listenTogetherButton = findViewById(R.id.listenTogetherButton); openXhsButton = findViewById(R.id.openXhsButton); openTargetAppButton = findViewById(R.id.openTargetAppButton); homeButton = findViewById(R.id.homeButton); backButton = findViewById(R.id.backButton); recentsButton = findViewById(R.id.recentsButton); alarmTestButton = findViewById(R.id.alarmTestButton); notifyTestButton = findViewById(R.id.notifyTestButton); refreshLifeButton = findViewById(R.id.refreshLifeButton);
         addPackageButton = findViewById(R.id.addPackageButton); testPackageButton = findViewById(R.id.testPackageButton); sequenceTestButton = findViewById(R.id.sequenceTestButton); refreshGateButton = findViewById(R.id.refreshGateButton); addGateAppButton = findViewById(R.id.addGateAppButton); addWeatherLocationButton = findViewById(R.id.addWeatherLocationButton); setCurrentWeatherButton = findViewById(R.id.setCurrentWeatherButton);
         testGuidianButton = findViewById(R.id.testGuidianButton); saveGuidianSettingsButton = findViewById(R.id.saveGuidianSettingsButton); chooseGuidianAvatarButton = findViewById(R.id.chooseGuidianAvatarButton); guidianThemeDuskButton = findViewById(R.id.guidianThemeDuskButton); guidianThemeCloudButton = findViewById(R.id.guidianThemeCloudButton); guidianThemeBerryButton = findViewById(R.id.guidianThemeBerryButton);
         themeCreamButton = findViewById(R.id.themeCreamButton); themeBlueButton = findViewById(R.id.themeBlueButton); themePeachButton = findViewById(R.id.themePeachButton); themeNightButton = findViewById(R.id.themeNightButton); themeMintButton = findViewById(R.id.themeMintButton); themePurpleButton = findViewById(R.id.themePurpleButton); drawerThemeButton = findViewById(R.id.drawerThemeButton); drawerNowStateButton = findViewById(R.id.drawerNowStateButton); locationPermissionButton = findViewById(R.id.locationPermissionButton); overlayPermissionButton = findViewById(R.id.overlayPermissionButton); notificationListenerButton = findViewById(R.id.notificationListenerButton);
@@ -2501,6 +2505,25 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_LISTEN_PROJECTION) {
+            if (resultCode != RESULT_OK || data == null) {
+                Toast.makeText(this, "已取消本次收音授权", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent capture = new Intent(this, AudioClipService.class)
+                    .setAction(AudioClipService.ACTION_START)
+                    .putExtra(AudioClipService.EXTRA_RESULT_CODE, resultCode)
+                    .putExtra(AudioClipService.EXTRA_PROJECTION_DATA, data);
+            try {
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(capture);
+                else startService(capture);
+                Toast.makeText(this, "砚团开始听12秒，结束后自动上传", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                DebugState.append(this, "一起看启动失败：" + ScreenshotService.shortMsg(e));
+                Toast.makeText(this, "声音捕获启动失败，请查看日志", Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (requestCode == REQ_GUIDIAN_AVATAR && resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
             try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) { }
@@ -2529,6 +2552,44 @@ public class MainActivity extends Activity {
     }
 
     private void stopCompanionService() { getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", true).apply(); stopService(new Intent(this, CompanionService.class)); DebugState.append(this, "已停止服务"); serviceRunning = false; updateUI(); }
+
+    // System playback capture is always started by the phone owner, never by MCP.
+    private void startListenTogether() {
+        if (Build.VERSION.SDK_INT < 29) {
+            Toast.makeText(this, "一起看需要 Android 10 或更新版本", Toast.LENGTH_LONG).show();
+            return;
+        }
+        saveSettings();
+        if (AppPrefs.server(this).isEmpty() || AppPrefs.token(this).isEmpty()) {
+            Toast.makeText(this, "请先设置砚团服务器地址和 Token", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_LISTEN_AUDIO_PERMISSION);
+            return;
+        }
+        requestListenProjectionConsent();
+    }
+
+    private void requestListenProjectionConsent() {
+        try {
+            android.media.projection.MediaProjectionManager manager =
+                    (android.media.projection.MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+            startActivityForResult(manager.createScreenCaptureIntent(), REQ_LISTEN_PROJECTION);
+        } catch (Exception e) {
+            DebugState.append(this, "一起看授权窗口无法开启：" + ScreenshotService.shortMsg(e));
+            Toast.makeText(this, "无法打开系统声音录制授权", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_LISTEN_AUDIO_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED)
+                requestListenProjectionConsent();
+            else Toast.makeText(this, "录取播放声音需要授予录音权限", Toast.LENGTH_LONG).show();
+        }
+    }
 
     private void testScreenshot() {
         saveSettings(); String url = serverUrl == null ? "" : serverUrl.getText().toString().trim(); String token = tokenInput == null ? "" : tokenInput.getText().toString().trim(); ScreenshotService ss = ScreenshotService.getInstance();
