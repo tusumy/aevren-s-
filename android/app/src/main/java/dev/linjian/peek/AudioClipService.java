@@ -174,7 +174,13 @@ public class AudioClipService extends Service {
                 sampler.close();
                 sampler = null;
             }
-            if (!capturing.get()) {
+            boolean fullyCaptured = capturing.get();
+            // Capture is over before any network upload: no background recording.
+            if (projection != null) {
+                projection.stop();
+                projection = null;
+            }
+            if (!fullyCaptured) {
                 DebugState.append(this, "一起看：用户或系统已停止本次画面与声音采集，不上传");
                 return;
             }
