@@ -68,10 +68,12 @@ export async function handleListenHttp(env, request, url) {
   }
   if (post && p === "/api/audio/clip") {
     const len = Number(request.headers.get("Content-Length")||0);
-    if (len < 44 || len > MAX_WAV_BYTES) return response({ok:false,error:"AUDIO_SIZE_INVALID"}, 413);
+    if (len > MAX_WAV_BYTES) return response({ok:false,error:"AUDIO_SIZE_INVALID"}, 413);
     const bytes = await request.arrayBuffer();
     const u = new Uint8Array(bytes);
-    if (u.length !== len || String.fromCharCode(...u.slice(0,4)) !== "RIFF"
+    if (u.length < 44 || u.length > MAX_WAV_BYTES)
+      return response({ok:false,error:"AUDIO_SIZE_INVALID"}, 413);
+    if ((len > 0 && u.length !== len) || String.fromCharCode(...u.slice(0,4)) !== "RIFF"
         || String.fromCharCode(...u.slice(8,12)) !== "WAVE")
       return response({ok:false,error:"AUDIO_FORMAT_INVALID"},400);
     const mtime = Date.now()/1000;
