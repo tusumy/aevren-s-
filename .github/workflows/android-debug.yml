@@ -40,6 +40,9 @@ jobs:
           python -m unittest discover -s server/tests -p 'test_audio_clip.py'
           python -m py_compile server/linjian_server.py
           node --check mcp/server.js
+          node --check server/cloudflare-worker/listen-together.js
+          node --check server/cloudflare-worker/worker.js
+          node --test server/cloudflare-worker/tests/listen-together.test.mjs
 
       - name: Build APK
         run: bash android/build.sh
