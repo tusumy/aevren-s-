@@ -1,3 +1,4 @@
+import { handleListenHttp, listenTogetherTool } from "./listen-together.js";
 const VERSION = "0.3.9.1-public-diary-annotations";
 // MCP Apps clients cache UI resources by URI. Change the URI whenever the HTML changes.
 const STICKER_WIDGET_URI = "ui://linjian/sticker-card-v0433.html";
@@ -57,6 +58,9 @@ async function handle(request, env) {
     if (path === "/api/voice_tone") return getNestedState(env, url, "voice_tone");
     if (path === "/api/companion/state") return getCompanionState(env, url);
     if (path === "/api/activity/events") return listActivityEvents(env, url);
+    if (path === "/api/video/latest" || path === "/api/video/latest.json" ||
+        path === "/api/audio/latest" || path === "/api/audio/latest.json")
+      return handleListenHttp(env, request, url);
     if (path === "/api/latest.json") return latestMeta(env);
     if (path === "/api/latest") return latestScreenshot(env);
     if (path === "/api/appgate/unlock_requests") return listUnlockRequests(env);
@@ -80,6 +84,8 @@ async function handle(request, env) {
     if (path === "/api/stickers/upload") return uploadStickerApi(env, await readJson(request));
     if (path === "/api/stickers/update") return updateStickerApi(env, await readJson(request));
     if (path === "/api/stickers/delete") return deleteStickerApi(env, await readJson(request));
+    if (path === "/api/video/clip" || path === "/api/audio/clip")
+      return handleListenHttp(env, request, url);
     if (path === "/api/screenshot") return saveScreenshot(env, request);
     if (path === "/api/lingyin/create" || path === "/api/jingming/create") return json({ ok: false, error: "cloudflare_lite_no_audio_generation", detail: "聆音/鲸鸣生成请切回 Render；已有 audio_url 的 play_audio/play_lingyin 命令仍可通过 /api/command 下发。" }, 501);
   }
@@ -272,6 +278,8 @@ const MCP_TOOLS = [
   { name: "get_companion_actions", description: "读取掌心窗中陪伴对象最近的真实行动记录。", inputSchema: obj({ limit: int(20) }) },
   { name: "get_activity_events", description: "读取掌心窗最近活动记录。", inputSchema: obj({ device_id: str(""), source: str(""), limit: int(50) }) },
   { name: "add_activity_event", description: "手动写入一条掌心窗活动事件。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE), source: str("linche"), type: str("activity"), title: str(""), subtitle: str(""), app_name: str(""), package_name: str(""), action: str(""), status: str("completed"), metadata_json: anyObj() }, ["source", "type", "title"]) },
+  { name: "listen_together_watch", description: "按时间顺序查看用户在手机端主动授权采集的最近12秒视频，最多6张关键帧；没有对白时可以观察表情、人物动作和镜头变化。只读、3分钟失效，不能远程启动录屏。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE) }) },
+  { name: "listen_together_transcribe", description: "识别用户在砚团主动授权录制的最近12秒媒体播放声音中的台词，需要 Worker 配置 OPENAI_API_KEY。若视频无对白或禁止内录，可使用 listen_together_watch 看画面。只读、不能启动录音。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE) }) },
   { name: "latest_screen", description: "读取最近一次掌心窗截图；如果有图片，会返回图片内容。", inputSchema: obj({}) },
   { name: "peek_screen", description: "向手机下发截图/窥屏指令，手机轮询到后执行并回传。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
 
@@ -686,6 +694,8 @@ async function callMcpTool(name, args = {}, env) {
     case "get_companion_actions": return mcpText(await responseJson(await getCompanionState(env, fakeUrl(`/api/companion/state?limit=${Number(args.limit || 20)}`))));
     case "get_activity_events": return mcpText(await responseJson(await listActivityEvents(env, fakeUrl(`/api/activity/events?${qs({ device_id: args.device_id || "", source: args.source || "", limit: args.limit || 50 })}`))));
     case "add_activity_event": return mcpText(await responseJson(await saveActivityEvent(env, args || {})));
+    case "listen_together_watch":
+    case "listen_together_transcribe": return listenTogetherTool(env, name, device_id);
     case "latest_screen": return latestScreenMcp(env);
     case "peek_screen": return peekScreenMcp(env, device_id, args.wait_seconds ?? 8);
 
