@@ -1237,6 +1237,86 @@ function makeServer() {
     }
   );
 
+  // The phone must first request Android playback-capture consent locally.
+  // This tool cannot start, extend or silently record a phone's audio.
+  // The phone owner must start capture and approve Android MediaProjection locally.
+  // This tool is read-only: it never starts a recording or controls the phone.
+  server.tool(
+    "listen_together_watch",
+    "查看手机用户主动授权的最近12秒视频关键帧：依时间顺序读取最多6张画面，并用于判断人物动作、镜头变化、无台词剧情。此工具只读已上传画面，不会远程开启录屏；画面3分钟过期。可另调用 listen_together_transcribe 获取对白。",
+    { device_id: z.string().default(DEFAULT_DEVICE) },
+    async ({ device_id = DEFAULT_DEVICE }) => {
+      const suffix = "?device_id=" + encodeURIComponent(device_id);
+      let clip;
+      try {
+        const res = await linjianFetch("/api/video/latest" + suffix, { timeout_ms: 8000 });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        clip = await res.json();
+      } catch (error) {
+        return textResult({ ok: false, error: "NO_RECENT_VIDEO",
+          message: "没有可用的最近视频画面，或已过期。请在砚团手机端点「一起看·录12秒」并同意 Android 录屏授权。",
+          detail: String(error?.message || error).slice(0, 200) });
+      }
+      const content = [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true, device_id,
+          capture_id: clip.capture_id,
+          captured_at_ms: clip.captured_at_ms,
+          received_at: clip.mtime,
+          duration_seconds: clip.duration_seconds,
+          frame_count: clip.frame_count,
+          note: "以下按毫秒时间偏移顺序排列。仅有离散关键帧，不是完整连续视频；不能从单帧断定声音或帧间动作。"
+        }, null, 2)
+      }];
+      for (let i = 0; i < (clip.frames || []).length; i++) {
+        const frame = clip.frames[i];
+        if (typeof frame.jpeg_b64 !== "string" || frame.jpeg_b64.length > 240000) continue;
+        content.push({ type: "text", text: "视频第 " + (i + 1) + " 帧 / +" + frame.offset_ms + " ms" });
+        content.push({ type: "image", data: frame.jpeg_b64, mimeType: "image/jpeg" });
+      }
+      return contentResult(content, false, {
+        ok: true, device_id, capture_id: clip.capture_id,
+        captured_at_ms: clip.captured_at_ms,
+        frame_count: clip.frame_count,
+        duration_seconds: clip.duration_seconds, source: "listen_together_watch"
+      });
+    }
+  );
+
+  server.tool(
+    "listen_together_transcribe",
+    "把用户在砚团手机端主动录取的最近12秒播放声音转成台词。必须先让用户在手机上点击「一起看·录12秒」并批准系统授权；不支持远程开启录音。需在 MCP 部署配置 OPENAI_API_KEY。",
+    { device_id: z.string().default(DEFAULT_DEVICE) },
+    async ({ device_id = DEFAULT_DEVICE }) => {
+      if (!process.env.OPENAI_API_KEY) {
+        return textResult({ ok: false, error: "STT_NOT_CONFIGURED", message: "MCP 尚未设置 OPENAI_API_KEY。声音捕获可以工作，但还不能自动识别台词。" });
+      }
+      const suffix = "?device_id=" + encodeURIComponent(device_id);
+      let info;
+      try {
+        info = await linjianFetch("/api/audio/latest.json" + suffix, { timeout_ms: 6000 }).then(r => r.json());
+      } catch (error) {
+        return textResult({ ok: false, error: "NO_RECENT_AUDIO", message: "还没有可用的声音片段（或已经过期）。请在手机砚团里点击「一起看·听12秒」。", detail: String(error?.message || error).slice(0, 300) });
+      }
+      const clip = await linjianFetch("/api/audio/latest" + suffix, { timeout_ms: 8000 });
+      const form = new FormData();
+      form.append("file", new Blob([await clip.arrayBuffer()], { type: "audio/wav" }), "listen.wav");
+      form.append("model", "gpt-4o-mini-transcribe");
+      const result = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + process.env.OPENAI_API_KEY },
+        body: form,
+        signal: AbortSignal.timeout(35000)
+      });
+      if (!result.ok) {
+        return textResult({ ok: false, error: "STT_FAILED", status: result.status, message: "转写服务调用失败，请确认密钥、额度和网络。" });
+      }
+      const data = await result.json();
+      return textResult({ ok: true, device_id, duration_seconds: info.duration_seconds, captured_at: info.mtime, transcript: String(data.text || ""), note: "只反映最近一次用户授权录制的片段；空白可能是播放器禁止系统内录或当前没有语音。" });
+    }
+  );
+
   server.tool("latest_screen", "不敲门，直接读取服务器里最近一次掌心窗截图。当用户提到刚刚那个页面、上一张截图、红点还在不在、页面刚才是什么样时可主动使用，避免反复请求新截图。", {}, async () => {
     const info = await latestInfo(); const img = await fetchLatestImage();
     return contentResult([

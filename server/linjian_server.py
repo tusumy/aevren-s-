@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import calendar
 import json
 import os
@@ -219,6 +221,11 @@ class State:
         self.data_dir = Path(data_dir).resolve()
         self.shots_dir = self.data_dir / "screenshots"
         self.shots_dir.mkdir(parents=True, exist_ok=True)
+        # Explicit user-initiated short playback clips. RAM-only, 3-minute expiry.
+        self.audio_lock = Lock()
+        self.audio_clips: dict[str, dict] = {}
+        self.video_lock = Lock()
+        self.video_clips: dict[str, dict] = {}
         self.commands: list[dict] = []
         self.command_history: dict[str, dict] = {}
         self.commands_lock = Lock()
@@ -486,6 +493,41 @@ class Handler(BaseHTTPRequestHandler):
                 self.state.command_history[cmd.get("id", "")] = dict(cmd)
             self._json(200, {"ok": True, "command": cmd})
             return
+        if path in ("/api/audio/latest.json", "/api/audio/latest"):
+            if not self._require_token(): return
+            device_id = (qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE)[:64]
+            with self.state.audio_lock:
+                now = time.time()
+                self.state.audio_clips = {k: v for k, v in self.state.audio_clips.items() if now - v["mtime"] <= 180}
+                clip = self.state.audio_clips.get(device_id)
+            if not clip:
+                self._json(404, {"ok": False, "error": "NO_RECENT_AUDIO", "message": "请先在手机端点击一起看并授权录取12秒声音"}); return
+            if path.endswith(".json"):
+                self._json(200, {"ok": True, "device_id": device_id, "mtime": clip["mtime"], "size": len(clip["data"]), "duration_seconds": clip["duration"], "expires_in_seconds": max(0, round(180 - (time.time() - clip["mtime"])))})
+            else:
+                self._send_bytes(200, clip["data"], "audio/wav")
+            return
+        if path in ("/api/video/latest.json", "/api/video/latest"):
+            if not self._require_token(): return
+            device_id = (qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE)[:64]
+            with self.state.video_lock:
+                now = time.time()
+                self.state.video_clips = {k: v for k, v in self.state.video_clips.items() if now - v["mtime"] <= 180}
+                clip = self.state.video_clips.get(device_id)
+            if not clip:
+                self._json(404, {"ok": False, "error": "NO_RECENT_VIDEO",
+                                 "message": "请先在手机端点击一起看并授权录取12秒关键画面"}); return
+            payload = {"ok": True, "device_id": device_id, "capture_id": clip["capture_id"],
+                       "captured_at_ms": clip["captured_at_ms"],
+                       "duration_seconds": clip["duration"], "mtime": clip["mtime"],
+                       "frame_count": len(clip["frames"]),
+                       "expires_in_seconds": max(0, round(180 - (time.time() - clip["mtime"])))}
+            if path.endswith(".json"):
+                payload["offsets_ms"] = [f["offset_ms"] for f in clip["frames"]]
+            else:
+                payload["frames"] = clip["frames"]
+            self._json(200, payload)
+            return
         if path == "/api/latest.json":
             if not self._require_token(): return
             shot = self.state.latest_shot()
@@ -616,6 +658,69 @@ class Handler(BaseHTTPRequestHandler):
             self.state.unlock_requests.append(data)
             self.state.unlock_requests = self.state.unlock_requests[-50:]
             self._json(200, {"ok": True, "request": data, "count": len(self.state.unlock_requests)}); return
+        if path == "/api/video/clip":
+            if not self._require_token(): return
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+            except (ValueError, TypeError):
+                length = 0
+            if length <= 0 or length > 1600 * 1024:
+                self._json(413, {"ok": False, "error": "VIDEO_SIZE_INVALID"}); return
+            raw = self.rfile.read(length)
+            try:
+                data = json.loads(raw.decode("utf-8"))
+                frames = data["frames"]
+                duration = float(data.get("duration_seconds") or 12)
+                captured_ms = int(data["captured_at_ms"])
+                capture_id = str(data["capture_id"])
+                if not isinstance(frames, list) or not 1 <= len(frames) <= 6:
+                    raise ValueError("frame_count")
+                if not 1 <= duration <= 15 or not 1 <= captured_ms:
+                    raise ValueError("duration")
+                if not 1 <= len(capture_id) <= 80:
+                    raise ValueError("capture_id")
+                clean = []
+                previous = -1
+                for frame in frames:
+                    offset = int(frame["offset_ms"])
+                    encoded = frame["jpeg_b64"]
+                    if not isinstance(encoded, str) or len(encoded) > 240000:
+                        raise ValueError("jpeg_size")
+                    decoded = base64.b64decode(encoded, validate=True)
+                    if not (100 <= len(decoded) <= 170 * 1024 and
+                            decoded[:3] == bytes((255, 216, 255)) and decoded[-2:] == bytes((255, 217))):
+                        raise ValueError("jpeg_format")
+                    if not previous < offset <= duration * 1000 + 500:
+                        raise ValueError("frame_order")
+                    clean.append({"offset_ms": offset, "jpeg_b64": encoded})
+                    previous = offset
+            except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, binascii.Error):
+                self._json(400, {"ok": False, "error": "VIDEO_FORMAT_INVALID"}); return
+            device_id = (self.headers.get("X-Device-Id") or DEFAULT_DEVICE)[:64]
+            with self.state.video_lock:
+                now = time.time()
+                self.state.video_clips = {k: v for k, v in self.state.video_clips.items() if now - v["mtime"] <= 180}
+                self.state.video_clips[device_id] = {
+                    "mtime": now, "frames": clean, "duration": duration,
+                    "capture_id": capture_id, "captured_at_ms": captured_ms
+                }
+            self._json(200, {"ok": True, "device_id": device_id,
+                             "frame_count": len(clean), "expires_in_seconds": 180})
+            return
+        if path == "/api/audio/clip":
+            if not self._require_token(): return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length < 44 or length > 1024 * 1024:
+                self._json(413, {"ok": False, "error": "AUDIO_SIZE_INVALID"}); return
+            data = self.rfile.read(length)
+            if len(data) != length or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+                self._json(400, {"ok": False, "error": "AUDIO_FORMAT_INVALID"}); return
+            device_id = (self.headers.get("X-Device-Id") or DEFAULT_DEVICE)[:64]
+            duration = max(0, round((len(data) - 44) / 32000, 2))
+            with self.state.audio_lock:
+                self.state.audio_clips[device_id] = {"mtime": time.time(), "data": data, "duration": duration}
+            self._json(200, {"ok": True, "device_id": device_id, "duration_seconds": duration, "expires_in_seconds": 180})
+            return
         if path == "/api/screenshot":
             if not self._require_token(): return
             self._handle_screenshot(); return
