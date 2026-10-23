@@ -317,7 +317,7 @@ public class TogetherWatchService extends Service {
         // Stop sharing means revoke the server snapshot too. Drain already queued
         // uploads before deleting them so no late upload resurrects a session.
         synchronized (soundBuffer) { soundBuffer.reset(); }
-        if (sessionId != null && !serverUrl.isEmpty()) {
+        if (sessionId != null && serverUrl != null && !serverUrl.isEmpty()) {
             uploadQueue.execute(() -> upload("/api/watch/stop?session_id=" + sessionId,
                 "application/octet-stream", new byte[0]));
         }
