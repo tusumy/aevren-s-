@@ -8,7 +8,7 @@ assert 'android:text="只截当前这一张"' in layout
 assert 'this::showSeeChooser' in activity
 assert 'this::testScreenshot), marginBottom(10)' not in activity
 chooser = activity.split("private void showSeeChooser()", 1)[1].split("private void showCompanionHomePage()", 1)[0]
-assert "一起看 · 去 X 或其他应用录12秒" in chooser
+assert "一起看 · 去 X 或其他应用共享屏幕" in chooser
 assert "只截当前屏幕这一张" in chooser
 assert "startActivity(new Intent(this, TogetherWatchActivity.class))" in chooser
 assert "testScreenshot();" in chooser
