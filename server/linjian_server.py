@@ -655,7 +655,16 @@ class Handler(BaseHTTPRequestHandler):
         path = self.state.watch_dir / "latest.json"
         try:
             meta = json.loads(path.read_text(encoding="utf-8"))
-            if time.time() - float(meta.get("updated_epoch", 0)) > 1800: return None
+            if time.time() - float(meta.get("updated_epoch", 0)) > 1800:
+                # Expired recordings should not remain as readable files on disk.
+                folder = self.state.watch_dir / str(meta.get("session_id", ""))
+                if folder.is_dir() and folder.parent == self.state.watch_dir:
+                    for file in folder.glob("*"):
+                        if file.is_file(): file.unlink(missing_ok=True)
+                    try: folder.rmdir()
+                    except OSError: pass
+                path.unlink(missing_ok=True)
+                return None
             return meta
         except (ValueError, OSError):
             return None
