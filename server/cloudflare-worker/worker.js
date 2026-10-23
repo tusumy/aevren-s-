@@ -59,6 +59,9 @@ async function handle(request, env) {
     if (path === "/api/activity/events") return listActivityEvents(env, url);
     if (path === "/api/latest.json") return latestMeta(env);
     if (path === "/api/latest") return latestScreenshot(env);
+    if (path === "/api/watch/latest") return watchLatest(env);
+    if (path === "/api/watch/frame") return watchMedia(env, url, false);
+    if (path === "/api/watch/audio") return watchMedia(env, url, true);
     if (path === "/api/appgate/unlock_requests") return listUnlockRequests(env);
     if (path === "/api/focus_state") return getNestedState(env, url, "focus_mode");
     if (path === "/api/stickers/list") return listStickersApi(env, url);
@@ -81,6 +84,8 @@ async function handle(request, env) {
     if (path === "/api/stickers/update") return updateStickerApi(env, await readJson(request));
     if (path === "/api/stickers/delete") return deleteStickerApi(env, await readJson(request));
     if (path === "/api/screenshot") return saveScreenshot(env, request);
+    if (path === "/api/watch/frame") return saveWatchMedia(env, request, url, false);
+    if (path === "/api/watch/audio") return saveWatchMedia(env, request, url, true);
     if (path === "/api/lingyin/create" || path === "/api/jingming/create") return json({ ok: false, error: "cloudflare_lite_no_audio_generation", detail: "聆音/鲸鸣生成请切回 Render；已有 audio_url 的 play_audio/play_lingyin 命令仍可通过 /api/command 下发。" }, 501);
   }
 
@@ -272,6 +277,7 @@ const MCP_TOOLS = [
   { name: "get_companion_actions", description: "读取掌心窗中陪伴对象最近的真实行动记录。", inputSchema: obj({ limit: int(20) }) },
   { name: "get_activity_events", description: "读取掌心窗最近活动记录。", inputSchema: obj({ device_id: str(""), source: str(""), limit: int(50) }) },
   { name: "add_activity_event", description: "手动写入一条掌心窗活动事件。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE), source: str("linche"), type: str("activity"), title: str(""), subtitle: str(""), app_name: str(""), package_name: str(""), action: str(""), status: str("completed"), metadata_json: anyObj() }, ["source", "type", "title"]) },
+  { name: "latest_watch", description: "读取用户在砚团手机上主动授权录制的最近12秒一起看片段：最多6张每2秒采样的画面，以及可捕获的应用播放声音。只有用户在手机上亲自点录制并同意系统授权才会产生，不会远程启动。录制内容约30分钟后失效。", inputSchema: obj({}) },
   { name: "latest_screen", description: "读取最近一次掌心窗截图；如果有图片，会返回图片内容。", inputSchema: obj({}) },
   { name: "peek_screen", description: "向手机下发截图/窥屏指令，手机轮询到后执行并回传。", inputSchema: obj({ device_id: str(DEFAULT_DEVICE), wait_seconds: int(8) }) },
 
@@ -686,6 +692,7 @@ async function callMcpTool(name, args = {}, env) {
     case "get_companion_actions": return mcpText(await responseJson(await getCompanionState(env, fakeUrl(`/api/companion/state?limit=${Number(args.limit || 20)}`))));
     case "get_activity_events": return mcpText(await responseJson(await listActivityEvents(env, fakeUrl(`/api/activity/events?${qs({ device_id: args.device_id || "", source: args.source || "", limit: args.limit || 50 })}`))));
     case "add_activity_event": return mcpText(await responseJson(await saveActivityEvent(env, args || {})));
+    case "latest_watch": return latestWatchMcp(env);
     case "latest_screen": return latestScreenMcp(env);
     case "peek_screen": return peekScreenMcp(env, device_id, args.wait_seconds ?? 8);
 
@@ -1620,6 +1627,88 @@ async function listUnlockRequests(env) {
   const rows = await env.DB.prepare("SELECT request_json FROM unlock_requests ORDER BY created_at DESC LIMIT 50").all();
   return json({ ok: true, requests: (rows.results || []).map(r => safeJson(r.request_json)) });
 }
+
+/** User-initiated ephemeral Together Watch media; never exposed without token. */
+function validWatchSession(id) { return /^[0-9a-f-]{36}$/.test(id || ""); }
+async function saveWatchMedia(env, request, url, audio) {
+  if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
+  const sid = url.searchParams.get("session_id") || "";
+  const idx = Number(url.searchParams.get("index"));
+  if (!validWatchSession(sid) || (!audio && (!Number.isInteger(idx) || idx < 0 || idx > 5)))
+    return json({ ok: false, error: "invalid_watch_session_or_frame" }, 400);
+  if (audio && request.headers.get("Content-Type")?.split(";")[0] !== "audio/wav")
+    return json({ ok: false, error: "expected_audio_wav" }, 415);
+  if (!audio && request.headers.get("Content-Type")?.split(";")[0] !== "image/jpeg")
+    return json({ ok: false, error: "expected_image_jpeg" }, 415);
+  const sizeHeader = Number(request.headers.get("content-length") || 0);
+  const maxBytes = audio ? 950_000 : 450_000;
+  if (sizeHeader > maxBytes) return json({ ok: false, error: "clip_too_large" }, 413);
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength < (audio ? 44 : 100) || bytes.byteLength > maxBytes)
+    return json({ ok: false, error: "invalid_clip_size" }, 400);
+  const first = new Uint8Array(bytes);
+  if (!audio && !(first[0] === 0xff && first[1] === 0xd8))
+    return json({ ok: false, error: "invalid_jpeg" }, 400);
+  if (audio && String.fromCharCode(...first.slice(0, 4)) !== "RIFF")
+    return json({ ok: false, error: "invalid_wav" }, 400);
+  const key = audio ? "watch:" + sid + ":audio" : "watch:" + sid + ":" + idx;
+  await env.SCREENSHOT_KV.put(key, bytes, { expirationTtl: 1800 });
+  const old = await env.SCREENSHOT_KV.get("watch_latest", "json");
+  const fresh = !old || old.session_id !== sid;
+  const data = fresh ? { ok: true, session_id: sid, device_id: url.searchParams.get("device_id") || DEFAULT_DEVICE,
+    captured_at: nowIso(), frames: [], audio_uploaded: false }
+    : old;
+  if (audio) data.audio_uploaded = true;
+  else if (!data.frames.includes(idx)) data.frames.push(idx);
+  data.frames.sort((a, b) => a - b);
+  data.updated_at = nowIso();
+  data.expires_at = new Date(Date.now() + 1800000).toISOString();
+  await env.SCREENSHOT_KV.put("watch_latest", JSON.stringify(data), { expirationTtl: 1800 });
+  return json({ ok: true, session_id: sid, count: data.frames.length, audio_uploaded: data.audio_uploaded });
+}
+async function watchLatest(env) {
+  if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
+  return json(await env.SCREENSHOT_KV.get("watch_latest", "json") ||
+    { ok: false, error: "watch_not_recorded" });
+}
+async function watchMedia(env, url, audio) {
+  if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
+  const sid = url.searchParams.get("session_id") || "";
+  const idx = Number(url.searchParams.get("index"));
+  const manifest = await env.SCREENSHOT_KV.get("watch_latest", "json");
+  if (!validWatchSession(sid) || !manifest || manifest.session_id !== sid ||
+      (!audio && (!Number.isInteger(idx) || !manifest.frames.includes(idx))) ||
+      (audio && !manifest.audio_uploaded))
+    return json({ ok: false, error: "watch_not_found_or_expired" }, 404);
+  const key = audio ? "watch:" + sid + ":audio" : "watch:" + sid + ":" + idx;
+  const bytes = await env.SCREENSHOT_KV.get(key, "arrayBuffer");
+  if (!bytes) return json({ ok: false, error: "watch_media_not_found" }, 404);
+  return new Response(bytes, { headers: { "Content-Type": audio ? "audio/wav" : "image/jpeg",
+    "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
+}
+async function latestWatchMcp(env) {
+  if (!env.SCREENSHOT_KV) return mcpText({ ok: false, error: "missing_kv_binding" }, true);
+  const meta = await env.SCREENSHOT_KV.get("watch_latest", "json");
+  if (!meta) return mcpText({ ok: false, error: "watch_not_recorded" }, true);
+  const content = [{ type: "text", text: JSON.stringify({
+    ...meta, note: "用户在手机亲自授权，最多6帧，每2秒一帧；画面不等于完整连续视频。音频能否收录取决于播放App的捕获策略。"
+  }, null, 2) }];
+  for (const index of (meta.frames || []).slice(0, 6)) {
+    const bytes = await env.SCREENSHOT_KV.get("watch:" + meta.session_id + ":" + index, "arrayBuffer");
+    if (!bytes || bytes.byteLength > 450000) continue;
+    content.push({ type: "text", text: "画面采样 " + index + "（约 " + index * 2 + " 秒）" });
+    content.push({ type: "image", mimeType: "image/jpeg", data: arrayBufferToBase64(bytes) });
+  }
+  if (meta.audio_uploaded) {
+    const wav = await env.SCREENSHOT_KV.get("watch:" + meta.session_id + ":audio", "arrayBuffer");
+    if (wav && wav.byteLength <= 950000) {
+      content.push({ type: "text", text: "应用播放音频（可捕获部分，WAV）" });
+      content.push({ type: "audio", mimeType: "audio/wav", data: arrayBufferToBase64(wav) });
+    }
+  }
+  return mcpContent(content, false, meta);
+}
+
 async function saveScreenshot(env, request) {
   if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
   const buf = await request.arrayBuffer();
