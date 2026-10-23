@@ -12,6 +12,7 @@ from __future__ import annotations
 import calendar
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -219,6 +220,9 @@ class State:
         self.data_dir = Path(data_dir).resolve()
         self.shots_dir = self.data_dir / "screenshots"
         self.shots_dir.mkdir(parents=True, exist_ok=True)
+        self.watch_dir = self.data_dir / "together_watch"
+        self.watch_dir.mkdir(parents=True, exist_ok=True)
+        self.watch_lock = Lock()
         self.commands: list[dict] = []
         self.command_history: dict[str, dict] = {}
         self.commands_lock = Lock()
@@ -486,6 +490,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.state.command_history[cmd.get("id", "")] = dict(cmd)
             self._json(200, {"ok": True, "command": cmd})
             return
+        if path == "/api/watch/latest":
+            if not self._require_token(): return
+            meta = self._watch_meta()
+            self._json(200 if meta else 404, meta or {"ok": False, "error": "watch_not_recorded"}); return
+        if path in ("/api/watch/frame", "/api/watch/audio"):
+            if not self._require_token(): return
+            meta = self._watch_meta()
+            sid = qs.get("session_id", [""])[0]
+            idx = qs.get("index", [""])[0]
+            audio = path.endswith("/audio")
+            if not meta or sid != meta.get("session_id") or (not audio and (not idx.isdigit() or int(idx) not in meta.get("frames", []))) or (audio and not meta.get("audio_uploaded")):
+                self._json(404, {"ok": False, "error": "watch_not_found_or_expired"}); return
+            media = self.state.watch_dir / sid / ("audio.wav" if audio else "frame_" + idx + ".jpg")
+            if not media.exists(): self._json(404, {"ok": False, "error": "watch_media_not_found"}); return
+            self._send_bytes(200, media.read_bytes(), "audio/wav" if audio else "image/jpeg"); return
         if path == "/api/latest.json":
             if not self._require_token(): return
             shot = self.state.latest_shot()
@@ -616,6 +635,9 @@ class Handler(BaseHTTPRequestHandler):
             self.state.unlock_requests.append(data)
             self.state.unlock_requests = self.state.unlock_requests[-50:]
             self._json(200, {"ok": True, "request": data, "count": len(self.state.unlock_requests)}); return
+        if path in ("/api/watch/frame", "/api/watch/audio"):
+            if not self._require_token(): return
+            self._handle_watch_media(path.endswith("/audio")); return
         if path == "/api/screenshot":
             if not self._require_token(): return
             self._handle_screenshot(); return
@@ -627,6 +649,63 @@ class Handler(BaseHTTPRequestHandler):
             if cmd.get("action") == "peek" and sum(1 for c in self.state.commands if c.get("action") == "peek") >= 3:
                 return
             self.state.commands.append(cmd)
+
+
+    def _watch_meta(self) -> dict | None:
+        path = self.state.watch_dir / "latest.json"
+        try:
+            meta = json.loads(path.read_text(encoding="utf-8"))
+            if time.time() - float(meta.get("updated_epoch", 0)) > 1800:
+                # Expired recordings should not remain as readable files on disk.
+                folder = self.state.watch_dir / str(meta.get("session_id", ""))
+                if folder.is_dir() and folder.parent == self.state.watch_dir:
+                    for file in folder.glob("*"):
+                        if file.is_file(): file.unlink(missing_ok=True)
+                    try: folder.rmdir()
+                    except OSError: pass
+                path.unlink(missing_ok=True)
+                return None
+            return meta
+        except (ValueError, OSError):
+            return None
+
+    def _handle_watch_media(self, audio: bool) -> None:
+        qs = parse_qs(urlparse(self.path).query)
+        sid = qs.get("session_id", [""])[0]
+        index = qs.get("index", [""])[0]
+        if not re.fullmatch(r"[0-9a-f-]{36}", sid) or (not audio and (not index.isdigit() or int(index) > 5)):
+            self._json(400, {"ok": False, "error": "invalid_watch_session_or_frame"}); return
+        mime = (self.headers.get("Content-Type") or "").split(";")[0]
+        if mime != ("audio/wav" if audio else "image/jpeg"):
+            self._json(415, {"ok": False, "error": "incorrect_watch_media_type"}); return
+        limit = 950000 if audio else 450000
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if not 100 <= length <= limit:
+            self._json(413, {"ok": False, "error": "invalid_clip_size"}); return
+        raw = self.rfile.read(length)
+        if len(raw) != length or (raw[:4] != b"RIFF" if audio else raw[:2] != b"\xff\xd8"):
+            self._json(400, {"ok": False, "error": "invalid_media_bytes"}); return
+        with self.state.watch_lock:
+            latest = self._watch_meta()
+            if not latest or latest.get("session_id") != sid:
+                latest = {"ok": True, "session_id": sid, "device_id": qs.get("device_id", [DEFAULT_DEVICE])[0],
+                          "captured_at": now_iso(), "frames": [], "audio_uploaded": False}
+            folder = self.state.watch_dir / sid
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / ("audio.wav" if audio else "frame_" + index + ".jpg")).write_bytes(raw)
+            if audio: latest["audio_uploaded"] = True
+            elif int(index) not in latest["frames"]: latest["frames"].append(int(index))
+            latest["frames"].sort()
+            latest["updated_epoch"] = time.time()
+            latest["updated_at"] = now_iso()
+            (self.state.watch_dir / "latest.json").write_text(json.dumps(latest, ensure_ascii=False), encoding="utf-8")
+            for old in self.state.watch_dir.iterdir():
+                if old.is_dir() and (old.name != sid or time.time() - old.stat().st_mtime > 1800):
+                    for file in old.glob("*"):
+                        if file.is_file(): file.unlink(missing_ok=True)
+                    try: old.rmdir()
+                    except OSError: pass
+        self._json(200, {"ok": True, "session_id": sid, "count": len(latest["frames"]), "audio_uploaded": latest["audio_uploaded"]})
 
     def _handle_screenshot(self) -> None:
         length = int(self.headers.get("Content-Length", 0))

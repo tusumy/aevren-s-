@@ -1237,6 +1237,38 @@ function makeServer() {
     }
   );
 
+  server.tool("latest_watch", "读取用户在砚团里主动授权采集的最近12秒一起看片段。最多6张画面帧和允许共享的应用音频；不会在手机端自动启动录制，约30分钟后过期。", {}, async () => {
+    const resp = await linjianFetch("/api/watch/latest");
+    const meta = await resp.json();
+    if (!meta.ok) return contentResult([{ type: "text", text: "尚无有效的一起看录制，需用户在砚团手机端按下录12秒并授权。" }], true);
+    const content = [{ type: "text", text: JSON.stringify({
+      ...meta, note: "每2秒采一帧，不是完整逐帧视频。应用音频能否读取由播放App和Android许可决定。"
+    }, null, 2) }];
+    for (const index of (meta.frames || []).slice(0, 6)) {
+      try {
+        const r = await linjianFetch("/api/watch/frame?session_id=" + encodeURIComponent(meta.session_id) + "&index=" + index);
+        if (!r.ok) continue;
+        const bytes = Buffer.from(await r.arrayBuffer());
+        if (bytes.length > 450000) continue;
+        content.push({ type: "text", text: "约 " + (index * 2) + " 秒画面" });
+        content.push({ type: "image", data: bytes.toString("base64"), mimeType: "image/jpeg" });
+      } catch (e) { content.push({ type: "text", text: "帧 " + index + " 获取失败：" + String(e) }); }
+    }
+    if (meta.audio_uploaded) {
+      try {
+        const r = await linjianFetch("/api/watch/audio?session_id=" + encodeURIComponent(meta.session_id));
+        if (r.ok) {
+          const bytes = Buffer.from(await r.arrayBuffer());
+          if (bytes.length < 950000) {
+            content.push({ type: "text", text: "应用播放声音 WAV（若目标App允许捕获）" });
+            content.push({ type: "audio", data: bytes.toString("base64"), mimeType: "audio/wav" });
+          }
+        }
+      } catch (e) { content.push({ type: "text", text: "声音读取失败：" + String(e) }); }
+    }
+    return contentResult(content, false, meta);
+  });
+
   server.tool("latest_screen", "不敲门，直接读取服务器里最近一次掌心窗截图。当用户提到刚刚那个页面、上一张截图、红点还在不在、页面刚才是什么样时可主动使用，避免反复请求新截图。", {}, async () => {
     const info = await latestInfo(); const img = await fetchLatestImage();
     return contentResult([

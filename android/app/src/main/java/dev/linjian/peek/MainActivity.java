@@ -132,6 +132,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         bindViews();
+        findViewById(R.id.togetherWatchButton).setOnClickListener(v ->
+            startActivity(new Intent(this, TogetherWatchActivity.class)));
         buildMagazinePages();
         loadSettings();
         NowState.start(this);

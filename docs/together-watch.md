@@ -1,0 +1,45 @@
+# 砚团 · 一起看 12 秒（v0.3.9.5）
+
+## 手机上怎样使用
+
+1. 安装与仓库版本一致的砚团 APK，确认砚团已经配置好服务器地址和 Token。
+2. 打开砚团首页，点 **「一起看 · 录12秒」**。
+3. 在弹窗里选择「只录画面」或者「画面＋应用声音」。
+4. 系统会要求同意屏幕录制/投屏。**选择共享整个屏幕**，否则选择砚团本身时会只看到砚团。
+5. 授权后有 **3 秒** 切回 X 视频。之后录制 12 秒，每约 2 秒采集一张画面，共最多 6 张。
+6. 上方会有「砚团 · 一起看」前台通知。点击「立即停止」可提前结束。
+7. 回到聊天请玄砚调用掌心窗 MCP 的 \`latest_watch\`。它读回最近的画面序列，以及应用允许共享时得到的 WAV 声音。
+
+这是**采样帧＋音频**，不是完整 MP4 或实时屏幕共享；画面用于剧情分析，快速运动和未被采样到的动作可能遗漏。少于 6 帧时应如实报告实际帧数。
+
+## 录不到声音？
+
+采用 Android 10+ 的 \`AudioPlaybackCapture\`，而非麦克风录音。不需要用户把麦克风对准扬声器，也不录房间内谈话。只有播放应用允许捕获的音频会传给砚团；某些应用、DRM 内容或特定声音流可能完全捕获不到，返回没有音频或静音。Android 版本低于 10 时只采画面。
+
+录不到某个视频的声音，不能据此推断原视频没声音。部分安全/隐私窗口也会输出黑画面，不能绕过操作系统限制。
+
+## 数据、安全、接口
+
+录制**只能从手机端**发起，而且需要在 Android 原生系统弹窗授权。没有允许 AI 在后台远程录制的命令。录制始终有前台通知与停止按钮；每次发起都重新走录屏授权。
+
+媒体默认通过你在砚团里配置的服务器和 Token 发送：
+- \`POST /api/watch/frame?session_id=<uuid>&index=0..5\`：JPEG，小于 450KB。
+- \`POST /api/watch/audio?session_id=<uuid>\`：可选 WAV，小于 950KB。
+- \`GET /api/watch/latest\`：最近一次会话和帧索引。
+- \`GET /api/watch/frame?session_id=...&index=...\` / \`GET /api/watch/audio?session_id=...\`：受 Token 保护的二进制媒体。
+
+Cloudflare KV 使用 1800 秒 TTL；Python 后端超过 30 分钟会拒绝读取并清理过期文件（下次请求时触发清理）。服务器应使用 HTTPS、强 Token、限制访问者；录屏可能包含密码/消息等隐私，启动前请切走敏感界面。
+
+现有 MCP 的 \`latest_watch\` 只读取最近一次用户授权的片段，返回按时间排序的图像及可能存在的音频；不会主动启动手机录制。
+
+## 验证
+
+\`\`\`bash
+python android/tests/test_together_watch.py
+python -m py_compile server/linjian_server.py
+node --check mcp/server.js
+node --check server/cloudflare-worker/worker.js
+bash android/build.sh
+\`\`\`
+
+Java 编译与签名使用仓库固定公开签名密钥。调试 CI 也会运行这些检查。APK、云端 Worker 或 Render 服务必须分别部署新版本后，才算手机端到 MCP 的端到端可用；只合并代码不等于部署完成。

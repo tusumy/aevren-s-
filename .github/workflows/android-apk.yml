@@ -61,18 +61,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.4
-          path: android/Zhangxinchuang-public-v0.3.9.4.apk
+          name: aevren-android-v0.3.9.5
+          path: android/Zhangxinchuang-public-v0.3.9.5.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.4
-          name: 砚团 v0.3.9.4
+          tag_name: v0.3.9.5
+          name: 砚团 v0.3.9.5
           body: |
-            修复玄砚桌宠贴边放大问题：半身猫按展开状态相同比例渲染，贴边立即进入睡眠并显示 Zzz，轻点恢复。
+            新增「一起看·录12秒」：手机主动授权采集6帧画面与可捕获的应用播放声音，通过短期存储接入 MCP；提供可随时停止的前台通知。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.4.apk
+          files: android/Zhangxinchuang-public-v0.3.9.5.apk
           fail_on_unmatched_files: true
