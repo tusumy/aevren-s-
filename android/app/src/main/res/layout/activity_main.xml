@@ -297,17 +297,30 @@
                     android:layout_marginBottom="8dp">
 
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="看见" android:textStyle="bold" android:textSize="16sp" android:textColor="#FF2D3E39" />
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="把当前屏幕递给你配置的陪伴对象看一眼。" android:textSize="11sp" android:textColor="#FF7E928C" android:layout_marginTop="6dp" android:lineSpacingExtra="4dp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="两种方式：截当前屏幕一张，或去其他应用录12秒画面。两者不会混用。" android:textSize="11sp" android:textColor="#FF7E928C" android:layout_marginTop="6dp" android:lineSpacingExtra="4dp" />
 
                     <Button
                         android:id="@+id/testButton"
                         android:layout_width="wrap_content"
                         android:layout_height="30dp"
-                        android:text="截图并上传"
+                        android:text="只截当前这一张"
                         android:textSize="11sp"
                         android:background="@drawable/pill_primary"
                         android:textColor="#FFFFFFFF"
                         android:layout_marginTop="8dp" />
+                    <Button
+                        android:id="@+id/watchFromSeeButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:text="一起看 · 去 X/其他应用录12秒"
+                        android:textSize="13sp"
+                        android:textColor="#FFFFFFFF"
+                        android:background="@drawable/pill_primary"
+                        android:layout_marginTop="12dp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="会先让你选择目标应用和系统录屏权限，确认切换到目标后才上传多帧画面。"
+                        android:textSize="11sp" android:textColor="#FF596D66"
+                        android:layout_marginTop="6dp" android:lineSpacingExtra="3dp" />
                 </LinearLayout>
 
 
