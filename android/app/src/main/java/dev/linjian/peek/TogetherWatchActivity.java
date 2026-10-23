@@ -111,6 +111,12 @@ public class TogetherWatchActivity extends Activity {
         service.putExtra(TogetherWatchService.EXTRA_RESULT_DATA, data);
         service.putExtra(TogetherWatchService.EXTRA_APP_AUDIO, withAppAudio);
         service.putExtra(TogetherWatchService.EXTRA_TARGET_X, forX);
+        if (forX) {
+            android.content.ComponentName component = target.resolveActivity(getPackageManager());
+            if (component != null) {
+                service.putExtra(TogetherWatchService.EXTRA_TARGET_PACKAGE, component.getPackageName());
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(service);
         else startService(service);
         try {
