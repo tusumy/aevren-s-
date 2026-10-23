@@ -134,6 +134,8 @@ public class MainActivity extends Activity {
         bindViews();
         findViewById(R.id.togetherWatchButton).setOnClickListener(v ->
             startActivity(new Intent(this, TogetherWatchActivity.class)));
+        findViewById(R.id.watchFromSeeButton).setOnClickListener(v ->
+            startActivity(new Intent(this, TogetherWatchActivity.class)));
         buildMagazinePages();
         loadSettings();
         NowState.start(this);
