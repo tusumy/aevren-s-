@@ -52,7 +52,7 @@ public class TogetherWatchService extends Service {
     public static final String EXTRA_TARGET_X = "capture_target_x";
     public static final String EXTRA_TARGET_PACKAGE = "capture_target_package";
 
-    private static final String CHANNEL = "together_watch";
+    private static final String CHANNEL = "together_watch_live";
     private static final int NOTIFICATION_ID = 12012;
     private static final long FRAME_INTERVAL_MS = 2000L;
     private static final long AUDIO_INTERVAL_MS = 8000L;
@@ -127,7 +127,7 @@ public class TogetherWatchService extends Service {
                 // Never record the 砚团 page. Capture only after a different, user-selected
                 // application is visibly foreground, stable for at least 1.5 seconds.
                 waitingStartedAt = SystemClock.elapsedRealtime();
-                updateNotification("请打开想看的视频，确认目标应用后才会录制");
+                updateNotification("请打开想看的视频，确认目标应用后才会共享");
                 worker.postDelayed(() -> waitForTarget(wantAudio), 1200L);
             } catch (Exception e) {
                 DebugState.append(this, "一起看授权失败：" + e.getMessage());
@@ -366,7 +366,7 @@ public class TogetherWatchService extends Service {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL, "一起看录制",
+            NotificationChannel channel = new NotificationChannel(CHANNEL, "一起看共享",
                 NotificationManager.IMPORTANCE_LOW);
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
                 .createNotificationChannel(channel);
