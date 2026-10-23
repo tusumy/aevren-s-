@@ -6,7 +6,7 @@ activity = (root / "android/app/src/main/java/dev/linjian/peek/TogetherWatchActi
 service = (root / "android/app/src/main/java/dev/linjian/peek/TogetherWatchService.java").read_text(encoding="utf-8")
 accessibility = (root / "android/app/src/main/java/dev/linjian/peek/ScreenshotService.java").read_text(encoding="utf-8")
 
-assert "先选画面" in activity
+assert "一起看 · 请选择要看的应用" in activity
 assert "去 X 看视频" in activity and "去其他应用" in activity
 assert "EXTRA_TARGET_X" in activity
 assert "startActivity(target)" in activity
