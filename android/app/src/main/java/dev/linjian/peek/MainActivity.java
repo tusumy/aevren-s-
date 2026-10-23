@@ -66,7 +66,7 @@ import java.util.List;
 public class MainActivity extends Activity {
     private static final String PREF_A11Y_SETTINGS_OPENED_AT = "a11y_settings_opened_at";
     private static final long A11Y_CONFIRM_WINDOW_MS = 30000L;
-    private static final String DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/linzhi-524/linjian-peek-public/main/update.json";
+    private static final String DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/tusumy/aevren-s-/main/update.json";
     private int latestVersionCode = AppPrefs.APP_VERSION_CODE;
     private String latestVersionName = AppPrefs.APP_VERSION_NAME;
     private String latestApkUrl = "";
@@ -2582,7 +2582,7 @@ public class MainActivity extends Activity {
                 connection = (HttpURLConnection) new URL(DEFAULT_UPDATE_URL).openConnection();
                 connection.setConnectTimeout(8000);
                 connection.setReadTimeout(8000);
-                connection.setRequestProperty("User-Agent", "Zhangxinchuang-Public/" + AppPrefs.APP_VERSION_NAME);
+                connection.setRequestProperty("User-Agent", "Yantuan/" + AppPrefs.APP_VERSION_NAME);
                 if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) throw new IllegalStateException("HTTP " + connection.getResponseCode());
                 ByteArrayOutputStream bytes = new ByteArrayOutputStream();
                 try (InputStream in = connection.getInputStream()) {
