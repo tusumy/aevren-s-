@@ -612,7 +612,7 @@ public class MainActivity extends Activity {
         root.addView(sectionHeading("更多陪伴"), marginBottom(8));
         root.addView(actionSettingBlock("TA 的日记", "把今天看见的你，轻轻写下来。", R.drawable.ic_heart_wave, this::showDiaryHomePage), marginBottom(7));
         root.addView(guardSettingBlock("归电", "很久没回来时，" + AppPrefs.companionName(this) + "来敲门", R.drawable.ic_clock, drawerGuidian), marginBottom(7));
-        root.addView(actionSettingBlock("看见", "一起看视频 · 录12秒，或截当前屏幕一张", R.drawable.ic_eye, this::showSeeChooser), marginBottom(10));
+        root.addView(actionSettingBlock("看见", "持续共享屏幕，或截当前屏幕一张", R.drawable.ic_eye, this::showSeeChooser), marginBottom(10));
         return root;
     }
 
@@ -624,7 +624,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle("看见 · 选择要分享的内容")
             .setItems(new String[]{
-                "一起看 · 去 X 或其他应用录12秒",
+                "一起看 · 去 X 或其他应用共享屏幕",
                 "只截当前屏幕这一张"
             }, (dialog, option) -> {
                 if (option == 0) {
