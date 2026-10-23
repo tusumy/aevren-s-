@@ -32,6 +32,13 @@ jobs:
       - name: Run notification regressions
         run: python android/tests/test_notification_regressions.py
 
+      - name: Validate Together Watch server and MCP
+        run: |
+          python android/tests/test_together_watch.py
+          python -m py_compile server/linjian_server.py
+          node --check mcp/server.js
+          node --check server/cloudflare-worker/worker.js
+
       - name: Build APK
         run: bash android/build.sh
 
