@@ -49,6 +49,8 @@ public class TogetherWatchService extends Service {
     public static final String EXTRA_RESULT_CODE = "capture_result_code";
     public static final String EXTRA_RESULT_DATA = "capture_result_data";
     public static final String EXTRA_APP_AUDIO = "capture_app_audio";
+    public static final String EXTRA_TARGET_X = "capture_target_x";
+    public static final String EXTRA_TARGET_PACKAGE = "capture_target_package";
 
     private static final String CHANNEL = "together_watch";
     private static final int NOTIFICATION_ID = 12012;
@@ -70,6 +72,11 @@ public class TogetherWatchService extends Service {
     private String sessionId, serverUrl, token;
     private long startedAt, lastFrameAt;
     private int frameCount;
+    private boolean targetX;
+    private String expectedTargetPackage = "";
+    private String capturedPackage = "";
+    private long targetVisibleSince = 0L;
+    private long waitingStartedAt;
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
@@ -86,7 +93,7 @@ public class TogetherWatchService extends Service {
             stopSelf(); return START_NOT_STICKY;
         }
         createNotificationChannel();
-        Notification n = notification("即将录制12秒，切到要看的视频");
+        Notification n = notification("等待你打开目标应用，不会拍砚团页面");
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         } else startForeground(NOTIFICATION_ID, n);
@@ -101,6 +108,9 @@ public class TogetherWatchService extends Service {
             ? intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent.class)
             : (Intent) intent.getParcelableExtra(EXTRA_RESULT_DATA);
         final boolean wantAudio = intent.getBooleanExtra(EXTRA_APP_AUDIO, false);
+        targetX = intent.getBooleanExtra(EXTRA_TARGET_X, true);
+        expectedTargetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE);
+        if (expectedTargetPackage == null || expectedTargetPackage.equals("android")) expectedTargetPackage = "";
         worker.post(() -> {
             try {
                 if (data == null || code == 0) throw new IllegalStateException("no projection consent");
@@ -111,14 +121,63 @@ public class TogetherWatchService extends Service {
                 projection.registerCallback(new MediaProjection.Callback() {
                     @Override public void onStop() { if (worker != null) worker.post(() -> endCapture()); }
                 }, worker);
-                // Three seconds to switch from 砚团 back to the target video app.
-                worker.postDelayed(() -> startFrames(wantAudio), 3000L);
+                // Never record the 砚团 page. Capture only after a different, user-selected
+                // application is visibly foreground, stable for at least 1.5 seconds.
+                waitingStartedAt = SystemClock.elapsedRealtime();
+                updateNotification("请打开想看的视频，确认目标应用后才会录制");
+                worker.postDelayed(() -> waitForTarget(wantAudio), 1200L);
             } catch (Exception e) {
                 DebugState.append(this, "一起看授权失败：" + e.getMessage());
                 endCapture();
             }
         });
         return START_NOT_STICKY;
+    }
+
+    private boolean permittedForeground(String pkg) {
+        if (pkg == null || pkg.isEmpty() || pkg.equals(getPackageName())) return false;
+        // Reject system permission sheets, app choosers, homescreens and status shade.
+        if (pkg.equals("android") || pkg.startsWith("com.android.systemui") ||
+            pkg.contains("permissioncontroller") || pkg.contains("packageinstaller") ||
+            pkg.contains("launcher") || pkg.contains("resolver")) return false;
+        if (!targetX) return true;
+        return pkg.equals(expectedTargetPackage) || pkg.equals("com.twitter.android") ||
+            pkg.equals("com.android.chrome") || pkg.equals("com.chrome.beta") ||
+            pkg.equals("org.mozilla.firefox") || pkg.equals("com.microsoft.emmx") ||
+            pkg.equals("com.brave.browser") || pkg.equals("com.sec.android.app.sbrowser") ||
+            pkg.equals("com.opera.browser") || pkg.equals("com.vivaldi.browser") ||
+            pkg.equals("com.kiwibrowser.browser") || pkg.equals("com.google.android.googlequicksearchbox");
+    }
+
+    private String foregroundPackage() {
+        ScreenshotService svc = ScreenshotService.getInstance();
+        return svc == null ? "" : svc.visibleForegroundPackage();
+    }
+
+    private void waitForTarget(boolean wantAudio) {
+        if (stopping) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - waitingStartedAt > 30000L) {
+            DebugState.append(this, "一起看：30秒内没有确认目标应用，未采集也未上传");
+            updateNotification("没有检测到目标应用，本次未录制");
+            endCapture();
+            return;
+        }
+        String foreground = foregroundPackage();
+        if (!permittedForeground(foreground)) {
+            targetVisibleSince = 0L;
+            capturedPackage = "";
+            worker.postDelayed(() -> waitForTarget(wantAudio), 600L);
+            return;
+        }
+        if (!foreground.equals(capturedPackage)) {
+            capturedPackage = foreground;
+            targetVisibleSince = now;
+        }
+        if (now - targetVisibleSince >= 1500L) {
+            updateNotification("已切换到目标应用，正在录制12秒 · 点击可停止");
+            startFrames(wantAudio);
+        } else worker.postDelayed(() -> waitForTarget(wantAudio), 600L);
     }
 
     private void startFrames(boolean wantAudio) {
@@ -153,6 +212,7 @@ public class TogetherWatchService extends Service {
             if (image == null) return;
             long now = SystemClock.elapsedRealtime();
             if (stopping || frameCount >= 6 || now - lastFrameAt < FRAME_INTERVAL_MS) return;
+            if (!capturedPackage.equals(foregroundPackage())) return;
             lastFrameAt = now;
             Image.Plane plane = image.getPlanes()[0];
             int width = image.getWidth(), height = image.getHeight();

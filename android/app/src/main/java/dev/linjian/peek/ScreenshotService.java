@@ -43,6 +43,23 @@ public class ScreenshotService extends AccessibilityService {
     public static ScreenshotService getInstance() { return instance; }
     public static boolean ready() { return instance != null; }
     public static String currentPackage() { return currentPackage == null ? "" : currentPackage; }
+    /**
+     * The current active window package, freshly read for Together Watch. Unlike
+     * currentPackage(), this does not depend on the last old accessibility event.
+     */
+    public String visibleForegroundPackage() {
+        AccessibilityNodeInfo root = null;
+        try {
+            root = getRootInActiveWindow();
+            return root != null && root.getPackageName() != null
+                ? root.getPackageName().toString() : "";
+        } catch (Exception e) {
+            return "";
+        } finally {
+            if (root != null) root.recycle();
+        }
+    }
+
     public static String screenText() { return screenText == null ? "" : screenText; }
     public static String screenNodesJson() { return screenNodesJson == null ? "[]" : screenNodesJson; }
 
