@@ -1,7 +1,7 @@
 {
-  "latest_version_name": "0.3.9.5",
-  "latest_version_code": 30905,
-  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.5/Zhangxinchuang-public-v0.3.9.5.apk",
+  "latest_version_name": "0.3.9.6",
+  "latest_version_code": 30906,
+  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.6/Zhangxinchuang-public-v0.3.9.6.apk",
   "sha256": "",
   "required": false,
   "notes": [
@@ -21,10 +21,10 @@
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "release_notes": [
+    "一起看改为先选 X 或其他应用，再请求屏幕录制授权；自动切到要看的应用。",
+    "只在检测到目标应用稳定显示后采集，切回砚团/系统界面不会上传对应帧。",
+    "需要启用砚团无障碍服务以核对前台应用；最多等待30秒，未确认目标则取消，不上传页面。",
     "一起看·录12秒：手机主动授权录屏，每隔2秒采集一张画面（最多6帧），尝试获取可共享的应用播放声音。",
-    "采集全程有通知，可随时停止；服务器片段30分钟过期。",
-    "录屏需要你在手机上允许屏幕共享，受版权或系统限制的画面/声音可能无法捕获。",
-    "玄砚贴边时保持原比例，只露半身，不会再放大；进入屏幕边缘立即默认睡眠，闭眼带 Zzz。",
-    "桌宠收边半身探头：取消仅显示绿色箭头的拉片，真实桌宠图片露出一半，轻点即可展开；左右两侧都支持。"
+    "采集全程有通知，可随时停止；服务器片段30分钟过期。"
   ]
 }
