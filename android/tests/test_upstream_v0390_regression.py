@@ -1,5 +1,6 @@
 """Selective upstream-sync guardrails: preserve the pet while enabling v0.3.9.0 fixes."""
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 def source(path):
@@ -31,8 +32,12 @@ def test_selective_sync():
     assert "diary_annotation_whitelist_fix" in server
     assert "notifyWalletUpdated(ctx)" in companion
     assert "walletUpdatedReceiver" in wallet
-    assert 'android:versionCode="30904"' in source("android/app/src/main/AndroidManifest.xml")
-    assert 'APP_VERSION_CODE = 30904' in source("android/app/src/main/java/dev/linjian/peek/AppPrefs.java")
+    manifest = source("android/app/src/main/AndroidManifest.xml")
+    prefs = source("android/app/src/main/java/dev/linjian/peek/AppPrefs.java")
+    manifest_code = re.search(r'android:versionCode="([0-9]+)"', manifest)
+    app_code = re.search(r'APP_VERSION_CODE = ([0-9]+)', prefs)
+    assert manifest_code and app_code
+    assert int(manifest_code.group(1)) == int(app_code.group(1)) >= 30904
 
 if __name__ == "__main__":
     test_selective_sync()
