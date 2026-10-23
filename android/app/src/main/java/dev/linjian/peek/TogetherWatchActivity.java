@@ -28,8 +28,9 @@ public class TogetherWatchActivity extends Activity {
         super.onCreate(state);
         manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         new AlertDialog.Builder(this)
-            .setTitle("一起看 · 先选画面")
-            .setMessage("我录的是你要看的应用，不是砚团首页。先选择去哪里，授权后我会自动帮你切过去；等目标应用显示出来，才开始12秒采集。")
+            .setTitle("一起看 · 请选择要看的应用")
+            // Android's AlertDialog hides setItems when setMessage is also configured.
+            // Keep the list as the actual dialog content so both choices are visible.
             .setItems(new String[]{"去 X 看视频", "去其他应用"}, (dialog, choice) -> {
                 forX = choice == 0;
                 askAudioMode();
