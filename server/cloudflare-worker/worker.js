@@ -86,6 +86,7 @@ async function handle(request, env) {
     if (path === "/api/screenshot") return saveScreenshot(env, request);
     if (path === "/api/watch/frame") return saveWatchMedia(env, request, url, false);
     if (path === "/api/watch/audio") return saveWatchMedia(env, request, url, true);
+    if (path === "/api/watch/stop") return stopWatchMedia(env, url);
     if (path === "/api/lingyin/create" || path === "/api/jingming/create") return json({ ok: false, error: "cloudflare_lite_no_audio_generation", detail: "聆音/鲸鸣生成请切回 Render；已有 audio_url 的 play_audio/play_lingyin 命令仍可通过 /api/command 下发。" }, 501);
   }
 
@@ -1634,7 +1635,9 @@ async function saveWatchMedia(env, request, url, audio) {
   if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
   const sid = url.searchParams.get("session_id") || "";
   const idx = Number(url.searchParams.get("index"));
-  if (!validWatchSession(sid) || (!audio && (!Number.isInteger(idx) || idx < 0 || idx > 5)))
+  const sequence = Number(url.searchParams.get("sequence") ?? url.searchParams.get("index"));
+  if (!validWatchSession(sid) || (!audio && (!Number.isInteger(idx) || idx < 0 || idx > 5 ||
+      !Number.isSafeInteger(sequence) || sequence < 0)))
     return json({ ok: false, error: "invalid_watch_session_or_frame" }, 400);
   if (audio && request.headers.get("Content-Type")?.split(";")[0] !== "audio/wav")
     return json({ ok: false, error: "expected_audio_wav" }, 415);
@@ -1656,15 +1659,35 @@ async function saveWatchMedia(env, request, url, audio) {
   const old = await env.SCREENSHOT_KV.get("watch_latest", "json");
   const fresh = !old || old.session_id !== sid;
   const data = fresh ? { ok: true, session_id: sid, device_id: url.searchParams.get("device_id") || DEFAULT_DEVICE,
-    captured_at: nowIso(), frames: [], audio_uploaded: false }
+    captured_at: nowIso(), frames: [], frame_sequence: {}, active: true, audio_uploaded: false }
     : old;
   if (audio) data.audio_uploaded = true;
-  else if (!data.frames.includes(idx)) data.frames.push(idx);
-  data.frames.sort((a, b) => a - b);
+  else {
+    data.frame_sequence ||= {};
+    if (sequence < (data.frame_sequence[idx] ?? -1))
+      return json({ ok: false, error: "stale_watch_frame" }, 409);
+    data.frame_sequence[idx] = sequence;
+    if (!data.frames.includes(idx)) data.frames.push(idx);
+    data.frames.sort((a, b) => (data.frame_sequence[a] ?? a) - (data.frame_sequence[b] ?? b));
+  }
+  data.active = true;
   data.updated_at = nowIso();
   data.expires_at = new Date(Date.now() + 1800000).toISOString();
   await env.SCREENSHOT_KV.put("watch_latest", JSON.stringify(data), { expirationTtl: 1800 });
   return json({ ok: true, session_id: sid, count: data.frames.length, audio_uploaded: data.audio_uploaded });
+}
+async function stopWatchMedia(env, url) {
+  if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
+  const sid = url.searchParams.get("session_id") || "";
+  if (!validWatchSession(sid)) return json({ ok: false, error: "invalid_watch_session" }, 400);
+  const latest = await env.SCREENSHOT_KV.get("watch_latest", "json");
+  if (latest?.session_id === sid) {
+    // Only delete the requesting session, not a newer user's session.
+    await env.SCREENSHOT_KV.delete("watch_latest");
+    await Promise.all([...Array(6).keys()].map(i => env.SCREENSHOT_KV.delete("watch:" + sid + ":" + i))
+      .concat(env.SCREENSHOT_KV.delete("watch:" + sid + ":audio")));
+  }
+  return json({ ok: true, stopped: true });
 }
 async function watchLatest(env) {
   if (!env.SCREENSHOT_KV) return json({ ok: false, error: "missing_kv_binding" }, 501);
@@ -1691,12 +1714,12 @@ async function latestWatchMcp(env) {
   const meta = await env.SCREENSHOT_KV.get("watch_latest", "json");
   if (!meta) return mcpText({ ok: false, error: "watch_not_recorded" }, true);
   const content = [{ type: "text", text: JSON.stringify({
-    ...meta, note: "用户在手机亲自授权，最多6帧，每2秒一帧；画面不等于完整连续视频。音频能否收录取决于播放App的捕获策略。"
+    ...meta, note: "手机端已授权持续共享；最多6张滚动画面，每2秒更新一张。需再次调用本工具读取最新帧，不是逐帧视频；音频为最新可捕获的分段。"
   }, null, 2) }];
   for (const index of (meta.frames || []).slice(0, 6)) {
     const bytes = await env.SCREENSHOT_KV.get("watch:" + meta.session_id + ":" + index, "arrayBuffer");
     if (!bytes || bytes.byteLength > 450000) continue;
-    content.push({ type: "text", text: "画面采样 " + index + "（约 " + index * 2 + " 秒）" });
+    content.push({ type: "text", text: "共享画面序号 " + (meta.frame_sequence?.[index] ?? index) });
     content.push({ type: "image", mimeType: "image/jpeg", data: arrayBufferToBase64(bytes) });
   }
   if (meta.audio_uploaded) {
