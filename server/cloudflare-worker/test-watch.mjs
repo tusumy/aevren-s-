@@ -6,6 +6,7 @@ class MemoryKV {
   async put(key, value, options = {}) {
     this.values.set(key, { value, expires: options.expirationTtl ? Date.now() + options.expirationTtl * 1000 : null });
   }
+  async delete(key) { this.values.delete(key); }
   async get(key, type) {
     const entry = this.values.get(key);
     if (!entry || (entry.expires && entry.expires < Date.now())) return null;
@@ -44,4 +45,19 @@ const wrong = await req("/api/watch/frame?session_id=../bad&index=0");
 assert.equal(wrong.status, 404);
 const invalid = await req("/api/watch/frame?session_id=" + sid + "&index=6", "POST", image, "image/jpeg");
 assert.equal(invalid.status, 400);
-console.log("Together Watch Cloudflare round trip OK");
+for (let i = 6; i < 12; i++) {
+  const slot = i % 6;
+  const next = new Uint8Array(image);
+  next[2] = i;
+  const r = await req("/api/watch/frame?session_id=" + sid + "&index=" + slot +
+    "&sequence=" + i, "POST", next, "image/jpeg");
+  assert.equal(r.status, 200, "rolling frame " + i);
+}
+const rolling = await (await req("/api/watch/latest")).json();
+assert.deepEqual(rolling.frames.map(i => rolling.frame_sequence[i]), [6,7,8,9,10,11]);
+const stop = await req("/api/watch/stop?session_id=" + sid, "POST");
+assert.equal(stop.status, 200);
+const empty = await (await req("/api/watch/latest")).json();
+assert.equal(empty.ok, false);
+assert.equal((await req("/api/watch/frame?session_id=" + sid + "&index=0")).status, 404);
+console.log("Together Watch live rolling and stop cleanup OK");

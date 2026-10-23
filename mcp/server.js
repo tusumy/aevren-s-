@@ -1237,12 +1237,12 @@ function makeServer() {
     }
   );
 
-  server.tool("latest_watch", "读取用户在砚团里主动授权采集的最近12秒一起看片段。最多6张画面帧和允许共享的应用音频；不会在手机端自动启动录制，约30分钟后过期。", {}, async () => {
+  server.tool("latest_watch", "读取用户在砚团手机端主动授权的持续屏幕共享：最新6张滚动画面和最近一段应用播放声音。需多次调用以更新，不会在手机端远程启动；停止后服务器清理缓存。", {}, async () => {
     const resp = await linjianFetch("/api/watch/latest");
     const meta = await resp.json();
-    if (!meta.ok) return contentResult([{ type: "text", text: "尚无有效的一起看录制，需用户在砚团手机端按下录12秒并授权。" }], true);
+    if (!meta.ok) return contentResult([{ type: "text", text: "当前没有共享画面，请在砚团手机端主动开启屏幕共享并授权。" }], true);
     const content = [{ type: "text", text: JSON.stringify({
-      ...meta, note: "每2秒采一帧，不是完整逐帧视频。应用音频能否读取由播放App和Android许可决定。"
+      ...meta, note: "持续共享时每2秒采集一张，最多保留6张滚动画面；反复调用本工具读取最新帧。不是逐帧直播。声音仅限应用允许捕获的最近分段。"
     }, null, 2) }];
     for (const index of (meta.frames || []).slice(0, 6)) {
       try {
@@ -1250,7 +1250,7 @@ function makeServer() {
         if (!r.ok) continue;
         const bytes = Buffer.from(await r.arrayBuffer());
         if (bytes.length > 450000) continue;
-        content.push({ type: "text", text: "约 " + (index * 2) + " 秒画面" });
+        content.push({ type: "text", text: "共享画面序号 " + (meta.frame_sequence?.[index] ?? index) });
         content.push({ type: "image", data: bytes.toString("base64"), mimeType: "image/jpeg" });
       } catch (e) { content.push({ type: "text", text: "帧 " + index + " 获取失败：" + String(e) }); }
     }

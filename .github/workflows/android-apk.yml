@@ -51,6 +51,7 @@ jobs:
         run: |
           node --check mcp/server.js
           node --check server/cloudflare-worker/worker.js
+          node server/cloudflare-worker/test-watch.mjs
           python -m py_compile server/linjian_server.py
 
       - name: Build and verify signed APK
@@ -61,18 +62,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.8
-          path: android/Zhangxinchuang-public-v0.3.9.8.apk
+          name: aevren-android-v0.3.9.9
+          path: android/Zhangxinchuang-public-v0.3.9.9.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.8
-          name: 砚团 v0.3.9.8
+          tag_name: v0.3.9.9
+          name: 砚团 v0.3.9.9
           body: |
-            修复「看见」动态入口直接上传截图的问题；选择录屏后，X 和其他应用两个选项会正常显示。
+            一起看升级为持续屏幕共享：每2秒更新最近6帧，应用声音滚动分段，通知栏停止并清理云端缓存。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.8.apk
+          files: android/Zhangxinchuang-public-v0.3.9.9.apk
           fail_on_unmatched_files: true

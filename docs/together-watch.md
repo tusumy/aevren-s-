@@ -1,45 +1,40 @@
-# 砚团 · 一起看 12 秒（v0.3.9.6）
+# 砚团 · 一起看屏幕（v0.3.9.9）
 
-## 手机上怎样使用
+## 手机使用
 
-1. 安装与仓库版本一致的砚团 APK，确认砚团已经配置好服务器地址和 Token。
-2. 打开砚团首页，点 **「一起看 · 录12秒」**，先选择「去 X 看视频」或「去其他应用」。必须启用砚团无障碍权限，让应用能确认当前打开的页面。
-3. 在弹窗里选择「只录画面」或者「画面＋应用声音」。
-4. 系统会要求同意屏幕录制/投屏。**选择共享整个屏幕**（或在系统提供的单应用选取中选择目标 X），不要选择砚团。授权后砚团会自动打开 X，或弹出其他应用选择器。
-5. 录制只在检测到目标应用稳定显示约1.5秒后开始；未检测到目标时不会自动截砚团页面，最多等30秒。录制12秒，每约2秒采样，最多6张。切走目标应用时不采样。
-6. 上方会有「砚团 · 一起看」前台通知。点击「立即停止」可提前结束。
-7. 回到聊天请玄砚调用掌心窗 MCP 的 \`latest_watch\`。它读回最近的画面序列，以及应用允许共享时得到的 WAV 声音。
+1. 在砚团配置服务器地址与 Token，开启无障碍服务以便检测正在显示的应用。
+2. 陪伴页 →「看见」→「一起看 · 去 X 或其他应用共享屏幕」。
+3. 选择「只录画面」或「画面＋应用声音」，在 Android 系统界面明确允许屏幕共享；不要选择砚团。
+4. 砚团切到 X 或你选的应用，检测到稳定显示约 1.5 秒后开始共享。没检测到目标应用会在 30 秒后取消，且不采集砚团自身页面。
+5. 每约 2 秒发送一张缩小的 JPEG，云端仅存最近 6 帧（循环覆盖）。如目标应用及 Android 允许抓取播放声音，每约 8 秒上传最新一段 WAV；不录麦克风。
+6. 聊天里的 AI 可以多次调用 `latest_watch` 获取新帧。**MCP 工具只在被调用时读取画面，并不是自动播放 30 FPS 的视频流**。如果切走正在共享的目标应用，砚团暂停取帧。
+7. 在 Android 前台通知点「立即停止」，砚团便会结束投屏会话、停止上传，并发送删除服务器缓冲区的请求；最长 1 小时自动结束（防遗忘保护）。
 
-这是**采样帧＋音频**，不是完整 MP4 或实时屏幕共享；画面用于剧情分析，快速运动和未被采样到的动作可能遗漏。少于 6 帧时应如实报告实际帧数。
+## 存储与隐私
 
-## 录不到声音？
+- Android MediaProjection 必须由用户在手机上主动授权；MCP 不提供远程开启共享的操作。
+- 云端仅保留最多 6 张最新截图，以及最近一次允许捕获的应用音频段。服务端不存完整 MP4，也不会将内容写到 GitHub。
+- 结束时服务器清理当前会话媒体：Python 后端删除文件，Cloudflare 删除相关 KV 项目。网络故障可能使立即删除失败；未清理的缓存依然会在最多约 30 分钟后过期或在后续请求时清理。Cloudflare KV 删除的可见性受其一致性模型影响。
+- 数据从手机上传到用户配置的服务器，由 AI 客户端调用 MCP 后再发送给所用模型。已经发送到聊天平台的工具结果，不受砚团的服务器删除操作控制。
+- 某些 App 禁止录取内部音频、私密窗口可能显示黑屏；不绕过 Android 安全保护。
 
-采用 Android 10+ 的 \`AudioPlaybackCapture\`，而非麦克风录音。不需要用户把麦克风对准扬声器，也不录房间内谈话。只有播放应用允许捕获的音频会传给砚团；某些应用、DRM 内容或特定声音流可能完全捕获不到，返回没有音频或静音。Android 版本低于 10 时只采画面。
+## API 兼容
 
-录不到某个视频的声音，不能据此推断原视频没声音。部分安全/隐私窗口也会输出黑画面，不能绕过操作系统限制。
+- `POST /api/watch/frame?session_id=<uuid>&index=0..5&sequence=<nonnegative>`：JPEG。旧版无 `sequence` 的 12 秒片段仍被接收。
+- `POST /api/watch/audio?session_id=<uuid>`：WAV，重复请求覆盖最近音频段。
+- `POST /api/watch/stop?session_id=<uuid>`：仅持有效 Token 才能请求，清除与该会话相关的云端媒体和索引。
+- `GET /api/watch/latest`：包含 `frames`（按采样时间排序）、`frame_sequence`、`active` 等元数据。
+- `GET /api/watch/frame`、`GET /api/watch/audio`：仅当当前授权会话仍然存在且媒体尚未清除时可取。
 
-## 数据、安全、接口
-
-录制**只能从手机端**发起，而且需要在 Android 原生系统弹窗授权。没有允许 AI 在后台远程录制的命令。录制始终有前台通知与停止按钮；每次发起都重新走录屏授权。
-
-媒体默认通过你在砚团里配置的服务器和 Token 发送：
-- \`POST /api/watch/frame?session_id=<uuid>&index=0..5\`：JPEG，小于 450KB。
-- \`POST /api/watch/audio?session_id=<uuid>\`：可选 WAV，小于 950KB。
-- \`GET /api/watch/latest\`：最近一次会话和帧索引。
-- \`GET /api/watch/frame?session_id=...&index=...\` / \`GET /api/watch/audio?session_id=...\`：受 Token 保护的二进制媒体。
-
-Cloudflare KV 使用 1800 秒 TTL；Python 后端超过 30 分钟会拒绝读取并清理过期文件（下次请求时触发清理）。服务器应使用 HTTPS、强 Token、限制访问者；录屏可能包含密码/消息等隐私，启动前请切走敏感界面。
-
-现有 MCP 的 \`latest_watch\` 只读取最近一次用户授权的片段，返回按时间排序的图像及可能存在的音频；不会主动启动手机录制。
+**升级说明：** Android APK、Python Server 或 Cloudflare Worker、MCP 服务需分别更新。只更新 APK 而未部署新服务器会导致超过 6 帧后无法正确持续共享或无法清除云端媒体。
 
 ## 验证
 
-\`\`\`bash
-python android/tests/test_together_watch.py
-python -m py_compile server/linjian_server.py
+```bash
+for test_file in android/tests/test_*.py; do python "$test_file"; done
+node server/cloudflare-worker/test-watch.mjs
 node --check mcp/server.js
 node --check server/cloudflare-worker/worker.js
+python -m py_compile server/linjian_server.py
 bash android/build.sh
-\`\`\`
-
-Java 编译与签名使用仓库固定公开签名密钥。调试 CI 也会运行这些检查。APK、云端 Worker 或 Render 服务必须分别部署新版本后，才算手机端到 MCP 的端到端可用；只合并代码不等于部署完成。
+```

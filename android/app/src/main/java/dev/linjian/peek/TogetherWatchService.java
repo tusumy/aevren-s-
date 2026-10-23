@@ -38,10 +38,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Local-only, consent-gated 12s watch capture.
- * A single Android MediaProjection session samples six JPEG frames at 2s
- * intervals and optionally captures allowed app playback (NOT microphone).
- * It never starts from an MCP/remote action.
+ * User-initiated live screen sharing through periodically updated snapshots.
+ * Server holds only six rolling JPEG frames and the most recent playback-audio
+ * chunk (when available). Sharing starts only with Android projection consent,
+ * ends with a visible notification action, and cannot start from an MCP call.
  */
 public class TogetherWatchService extends Service {
     public static final String ACTION_START = "dev.linjian.peek.WATCH_START";
@@ -52,12 +52,15 @@ public class TogetherWatchService extends Service {
     public static final String EXTRA_TARGET_X = "capture_target_x";
     public static final String EXTRA_TARGET_PACKAGE = "capture_target_package";
 
-    private static final String CHANNEL = "together_watch";
+    private static final String CHANNEL = "together_watch_live";
     private static final int NOTIFICATION_ID = 12012;
-    private static final long DURATION_MS = 12000L;
     private static final long FRAME_INTERVAL_MS = 2000L;
+    private static final long AUDIO_INTERVAL_MS = 8000L;
+    // Safety stop if the user forgets to end a session (or a notification is lost).
+    private static final long MAX_SESSION_MS = 60L * 60L * 1000L;
 
     private final ExecutorService uploadQueue = Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.atomic.AtomicInteger pendingFrames = new java.util.concurrent.atomic.AtomicInteger();
     private HandlerThread captureThread;
     private Handler worker;
     private MediaProjection projection;
@@ -124,7 +127,7 @@ public class TogetherWatchService extends Service {
                 // Never record the 砚团 page. Capture only after a different, user-selected
                 // application is visibly foreground, stable for at least 1.5 seconds.
                 waitingStartedAt = SystemClock.elapsedRealtime();
-                updateNotification("请打开想看的视频，确认目标应用后才会录制");
+                updateNotification("请打开想看的视频，确认目标应用后才会共享");
                 worker.postDelayed(() -> waitForTarget(wantAudio), 1200L);
             } catch (Exception e) {
                 DebugState.append(this, "一起看授权失败：" + e.getMessage());
@@ -175,7 +178,7 @@ public class TogetherWatchService extends Service {
             targetVisibleSince = now;
         }
         if (now - targetVisibleSince >= 1500L) {
-            updateNotification("已切换到目标应用，正在录制12秒 · 点击可停止");
+            updateNotification("正在共享画面 · 点通知栏立即停止");
             startFrames(wantAudio);
         } else worker.postDelayed(() -> waitForTarget(wantAudio), 600L);
     }
@@ -187,7 +190,7 @@ public class TogetherWatchService extends Service {
             int width = metrics.widthPixels, height = metrics.heightPixels;
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
             reader.setOnImageAvailableListener(this::receiveFrame, worker);
-            display = projection.createVirtualDisplay("TogetherWatch12s", width, height,
+            display = projection.createVirtualDisplay("TogetherWatchLive", width, height,
                 metrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 reader.getSurface(), null, worker);
             startedAt = SystemClock.elapsedRealtime();
@@ -196,9 +199,10 @@ public class TogetherWatchService extends Service {
                 checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 startPlaybackAudio();
             }
-            updateNotification("正在录制 · 12秒，点击停止");
-            worker.postDelayed(this::endCapture, DURATION_MS);
-            DebugState.append(this, "一起看开始，session=" + sessionId);
+            updateNotification("屏幕共享中 · 每2秒更新画面 · 点击停止");
+            worker.postDelayed(this::endCapture, MAX_SESSION_MS);
+            if (recordingAudio) worker.postDelayed(this::flushAudioChunk, AUDIO_INTERVAL_MS);
+            DebugState.append(this, "屏幕共享开始，session=" + sessionId);
         } catch (Exception e) {
             DebugState.append(this, "一起看采集失败：" + e.getMessage());
             endCapture();
@@ -211,7 +215,7 @@ public class TogetherWatchService extends Service {
             image = source.acquireLatestImage();
             if (image == null) return;
             long now = SystemClock.elapsedRealtime();
-            if (stopping || frameCount >= 6 || now - lastFrameAt < FRAME_INTERVAL_MS) return;
+            if (stopping || now - lastFrameAt < FRAME_INTERVAL_MS || pendingFrames.get() >= 2) return;
             if (!capturedPackage.equals(foregroundPackage())) return;
             lastFrameAt = now;
             Image.Plane plane = image.getPlanes()[0];
@@ -229,11 +233,17 @@ public class TogetherWatchService extends Service {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             scaled.compress(Bitmap.CompressFormat.JPEG, 62, out);
             padded.recycle(); cropped.recycle(); scaled.recycle();
-            int index = frameCount++;
+            int index = frameCount % 6;
+            int sequence = frameCount++;
             byte[] bytes = out.toByteArray();
-            uploadQueue.execute(() -> upload("/api/watch/frame?session_id=" + sessionId
-                + "&device_id=" + AppPrefs.device(this) + "&index=" + index,
-                "image/jpeg", bytes));
+            pendingFrames.incrementAndGet();
+            uploadQueue.execute(() -> {
+                try {
+                    upload("/api/watch/frame?session_id=" + sessionId
+                        + "&device_id=" + AppPrefs.device(this) + "&index=" + index
+                        + "&sequence=" + sequence, "image/jpeg", bytes);
+                } finally { pendingFrames.decrementAndGet(); }
+            });
         } catch (Exception e) {
             DebugState.append(this, "一起看帧失败：" + e.getMessage());
         } finally {
@@ -269,7 +279,7 @@ public class TogetherWatchService extends Service {
                 while (recordingAudio) {
                     int n = playbackAudio.read(chunk, 0, chunk.length);
                     if (n > 0) synchronized (soundBuffer) {
-                        if (soundBuffer.size() + n < 500_000) soundBuffer.write(chunk, 0, n);
+                        if (soundBuffer.size() + n < 900_000) soundBuffer.write(chunk, 0, n);
                     }
                     else if (n < 0) break;
                 }
@@ -281,6 +291,21 @@ public class TogetherWatchService extends Service {
         }
     }
 
+    private void flushAudioChunk() {
+        if (stopping || !recordingAudio) return;
+        final byte[] pcm;
+        synchronized (soundBuffer) {
+            pcm = soundBuffer.toByteArray();
+            soundBuffer.reset();
+        }
+        if (pcm.length > 1600) {
+            final byte[] wav = toWav(pcm);
+            uploadQueue.execute(() -> upload("/api/watch/audio?session_id=" + sessionId
+                + "&device_id=" + AppPrefs.device(this), "audio/wav", wav));
+        }
+        if (!stopping && worker != null) worker.postDelayed(this::flushAudioChunk, AUDIO_INTERVAL_MS);
+    }
+
     private synchronized void endCapture() {
         if (stopping) return;
         stopping = true;
@@ -289,17 +314,17 @@ public class TogetherWatchService extends Service {
         try { if (audioThread != null) audioThread.join(400); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         try { if (playbackAudio != null) playbackAudio.release(); } catch (Exception ignored) {}
         playbackAudio = null;
-        final byte[] pcm;
-        synchronized (soundBuffer) { pcm = soundBuffer.toByteArray(); }
-        if (pcm.length > 1600) {
-            byte[] wav = toWav(pcm);
-            uploadQueue.execute(() -> upload("/api/watch/audio?session_id=" + sessionId
-                + "&device_id=" + AppPrefs.device(this), "audio/wav", wav));
+        // Stop sharing means revoke the server snapshot too. Drain already queued
+        // uploads before deleting them so no late upload resurrects a session.
+        synchronized (soundBuffer) { soundBuffer.reset(); }
+        if (sessionId != null && serverUrl != null && !serverUrl.isEmpty()) {
+            uploadQueue.execute(() -> upload("/api/watch/stop?session_id=" + sessionId,
+                "application/octet-stream", new byte[0]));
         }
         if (display != null) { display.release(); display = null; }
         if (reader != null) { reader.close(); reader = null; }
         if (projection != null) { projection.stop(); projection = null; }
-        DebugState.append(this, "一起看结束：" + frameCount + "帧，应用声音PCM字节=" + pcm.length);
+        DebugState.append(this, "屏幕共享结束：" + frameCount + "次画面采样；服务器缓存清理已排队");
         uploadQueue.shutdown();
         if (captureThread != null) captureThread.quitSafely();
         stopForeground(true);
@@ -334,14 +359,14 @@ public class TogetherWatchService extends Service {
             con.setFixedLengthStreamingMode(data.length);
             try (OutputStream out = con.getOutputStream()) { out.write(data); }
             int code = con.getResponseCode();
-            if (code < 200 || code >= 300) DebugState.append(this, "一起看上传失败：" + code);
+            if (code < 200 || code >= 300) DebugState.append(this, "屏幕共享请求失败：" + code);
         } catch (Exception e) { DebugState.append(this, "一起看上传异常：" + e.getMessage()); }
         finally { if (con != null) con.disconnect(); }
     }
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL, "一起看录制",
+            NotificationChannel channel = new NotificationChannel(CHANNEL, "一起看共享",
                 NotificationManager.IMPORTANCE_LOW);
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
                 .createNotificationChannel(channel);
