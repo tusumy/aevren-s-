@@ -62,18 +62,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.9
-          path: android/Zhangxinchuang-public-v0.3.9.9.apk
+          name: yantuan-android-v0.3.9.10
+          path: android/砚团-v0.3.9.10.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.9
-          name: 砚团 v0.3.9.9
+          tag_name: v0.3.9.10
+          name: 砚团 v0.3.9.10
           body: |
-            一起看升级为持续屏幕共享：每2秒更新最近6帧，应用声音滚动分段，通知栏停止并清理云端缓存。
+            修正正式安装包名称为「砚团」；保留持续共享画面和应用声音、最近6帧缓存、通知停止和云端清理。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.9.apk
+          files: android/砚团-v0.3.9.10.apk
           fail_on_unmatched_files: true
