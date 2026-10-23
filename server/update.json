@@ -1,7 +1,7 @@
 {
-  "latest_version_name": "0.3.9.6",
-  "latest_version_code": 30906,
-  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.6/Zhangxinchuang-public-v0.3.9.6.apk",
+  "latest_version_name": "0.3.9.7",
+  "latest_version_code": 30907,
+  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.7/Zhangxinchuang-public-v0.3.9.7.apk",
   "sha256": "",
   "required": false,
   "notes": [
@@ -21,10 +21,9 @@
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "release_notes": [
+    "「看见」页面新增独立的「一起看 · 去 X/其他应用录12秒」按钮。",
+    "原来的一键截屏按钮改为「只截当前这一张」，避免误认成录制视频。",
     "一起看改为先选 X 或其他应用，再请求屏幕录制授权；自动切到要看的应用。",
-    "只在检测到目标应用稳定显示后采集，切回砚团/系统界面不会上传对应帧。",
-    "需要启用砚团无障碍服务以核对前台应用；最多等待30秒，未确认目标则取消，不上传页面。",
-    "一起看·录12秒：手机主动授权录屏，每隔2秒采集一张画面（最多6帧），尝试获取可共享的应用播放声音。",
-    "采集全程有通知，可随时停止；服务器片段30分钟过期。"
+    "只在检测到目标应用稳定显示后采集，切回砚团/系统界面不会上传对应帧。"
   ]
 }
