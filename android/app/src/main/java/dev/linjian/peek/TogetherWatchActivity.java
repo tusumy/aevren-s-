@@ -42,8 +42,8 @@ public class TogetherWatchActivity extends Activity {
 
     private void askAudioMode() {
         new AlertDialog.Builder(this)
-            .setTitle("接下来录 12 秒")
-            .setMessage("每隔2秒采一张画面，最多6张。你允许的话还可以收取应用开放的播放声音；不会录麦克风。\n\n系统会再次要求屏幕共享授权，请选「整个屏幕」或目标应用，别选砚团。录制有通知，随时可停；请避开密码和私人消息。")
+            .setTitle("开始持续屏幕共享")
+            .setMessage("每2秒更新画面，云端只保留最近6张；应用允许时也会每8秒更新一段播放声音，不录麦克风。\n\n系统会要求屏幕共享授权，请选目标应用或整个屏幕，不要选砚团。通知栏可随时停止并清除服务器临时内容；最长1小时自动停止。请避开密码和私人消息。")
             .setPositiveButton("画面＋应用声音", (d, w) -> begin(true))
             .setNeutralButton("只录画面", (d, w) -> begin(false))
             .setNegativeButton("取消", (d, w) -> finish())
@@ -102,7 +102,7 @@ public class TogetherWatchActivity extends Activity {
             }
             target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         } catch (Exception e) {
-            Toast.makeText(this, "无法打开目标应用，本次没有录屏", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "无法打开目标应用，本次没有共享", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -122,10 +122,10 @@ public class TogetherWatchActivity extends Activity {
         else startService(service);
         try {
             startActivity(target);
-            Toast.makeText(this, "已切换目标应用，等画面稳定后才会采集；可从通知停止", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "已切换目标应用，画面稳定后开始共享；通知栏可停止", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             stopService(new Intent(this, TogetherWatchService.class));
-            Toast.makeText(this, "目标应用打开失败，本次没有录屏", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "目标应用打开失败，本次没有共享", Toast.LENGTH_LONG).show();
         }
         finish();
     }
