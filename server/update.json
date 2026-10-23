@@ -1,7 +1,7 @@
 {
-  "latest_version_name": "0.3.9.8",
-  "latest_version_code": 30908,
-  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.8/Zhangxinchuang-public-v0.3.9.8.apk",
+  "latest_version_name": "0.3.9.10",
+  "latest_version_code": 30910,
+  "apk_url": "https://github.com/tusumy/aevren-s-/releases/download/v0.3.9.10/%E7%A0%9A%E5%9B%A2-v0.3.9.10.apk",
   "sha256": "",
   "required": false,
   "notes": [
@@ -21,8 +21,8 @@
     "MCP、server 与 Cloudflare Worker 相关修复需重新部署相应服务才会生效。"
   ],
   "release_notes": [
-    "修复「看见」动态入口直接截图的问题，点击后可选择录12秒或单张截图。",
-    "修复一起看弹窗：现在会显示「去 X 看视频」及「去其他应用」，不再只有取消。",
-    "「看见」页面新增独立的「一起看 · 去 X/其他应用录12秒」按钮。"
+    "正式 APK 名称已统一为「砚团」，版本 0.3.9.10。",
+    "持续共享屏幕：每2秒上传新画面，云端保留最新6帧；可选的应用播放声音按段更新。",
+    "用户在通知栏停止共享会触发临时画面/声音清理；服务器与 MCP 需同步更新。"
   ]
 }
