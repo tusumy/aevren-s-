@@ -50,6 +50,7 @@ public class TogetherWatchService extends Service {
     public static final String EXTRA_RESULT_DATA = "capture_result_data";
     public static final String EXTRA_APP_AUDIO = "capture_app_audio";
     public static final String EXTRA_TARGET_X = "capture_target_x";
+    public static final String EXTRA_TARGET_PACKAGE = "capture_target_package";
 
     private static final String CHANNEL = "together_watch";
     private static final int NOTIFICATION_ID = 12012;
@@ -72,6 +73,7 @@ public class TogetherWatchService extends Service {
     private long startedAt, lastFrameAt;
     private int frameCount;
     private boolean targetX;
+    private String expectedTargetPackage = "";
     private String capturedPackage = "";
     private long targetVisibleSince = 0L;
     private long waitingStartedAt;
@@ -107,6 +109,8 @@ public class TogetherWatchService extends Service {
             : (Intent) intent.getParcelableExtra(EXTRA_RESULT_DATA);
         final boolean wantAudio = intent.getBooleanExtra(EXTRA_APP_AUDIO, false);
         targetX = intent.getBooleanExtra(EXTRA_TARGET_X, true);
+        expectedTargetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE);
+        if (expectedTargetPackage == null || expectedTargetPackage.equals("android")) expectedTargetPackage = "";
         worker.post(() -> {
             try {
                 if (data == null || code == 0) throw new IllegalStateException("no projection consent");
@@ -137,7 +141,7 @@ public class TogetherWatchService extends Service {
             pkg.contains("permissioncontroller") || pkg.contains("packageinstaller") ||
             pkg.contains("launcher") || pkg.contains("resolver")) return false;
         if (!targetX) return true;
-        return pkg.equals("com.twitter.android") ||
+        return pkg.equals(expectedTargetPackage) || pkg.equals("com.twitter.android") ||
             pkg.equals("com.android.chrome") || pkg.equals("com.chrome.beta") ||
             pkg.equals("org.mozilla.firefox") || pkg.equals("com.microsoft.emmx") ||
             pkg.equals("com.brave.browser") || pkg.equals("com.sec.android.app.sbrowser") ||
