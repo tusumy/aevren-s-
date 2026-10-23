@@ -38,6 +38,7 @@ jobs:
           python -m py_compile server/linjian_server.py
           node --check mcp/server.js
           node --check server/cloudflare-worker/worker.js
+          node server/cloudflare-worker/test-watch.mjs
 
       - name: Build APK
         run: bash android/build.sh
