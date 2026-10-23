@@ -79,6 +79,28 @@ class TogetherWatchTest(unittest.TestCase):
         self.assertEqual(err.exception.code, 404)
         self.assertFalse((self.state.watch_dir / sid).exists())
 
+    def test_rolling_frames_and_stop_delete(self):
+        sid = "faafe8b9-cd1b-421a-92cd-9bc2aa927073"
+        for sequence in range(11):
+            slot = sequence % 6
+            image = b"\xff\xd8" + bytes([65 + sequence]) * 150
+            status, _, _ = self.request(
+                f"/api/watch/frame?session_id={sid}&index={slot}&sequence={sequence}",
+                method="POST", data=image, content_type="image/jpeg")
+            self.assertEqual(status, 200)
+        meta = json.loads(self.request("/api/watch/latest")[1])
+        self.assertEqual(len(meta["frames"]), 6)
+        self.assertEqual([meta["frame_sequence"][str(i)] for i in meta["frames"]], list(range(5, 11)))
+        self.assertTrue(meta["active"])
+        self.assertEqual(self.request("/api/watch/frame?session_id=" + sid + "&index=0")[1],
+                         b"\xff\xd8" + bytes([71]) * 150)
+        status, _, _ = self.request("/api/watch/stop?session_id=" + sid, method="POST", data=b"")
+        self.assertEqual(status, 200)
+        with self.assertRaises(HTTPError) as err:
+            self.request("/api/watch/latest")
+        self.assertEqual(err.exception.code, 404)
+        self.assertFalse((self.state.watch_dir / sid).exists())
+
     def test_uploads_validate_media_type_and_size(self):
         sid = "faafe8b9-cd1b-421a-92cd-9bc2aa927073"
         for idx, body, ctype in [
