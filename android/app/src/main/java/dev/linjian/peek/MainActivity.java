@@ -132,10 +132,6 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         bindViews();
-        findViewById(R.id.togetherWatchButton).setOnClickListener(v ->
-            startActivity(new Intent(this, TogetherWatchActivity.class)));
-        findViewById(R.id.watchFromSeeButton).setOnClickListener(v ->
-            startActivity(new Intent(this, TogetherWatchActivity.class)));
         buildMagazinePages();
         loadSettings();
         NowState.start(this);
@@ -616,8 +612,29 @@ public class MainActivity extends Activity {
         root.addView(sectionHeading("更多陪伴"), marginBottom(8));
         root.addView(actionSettingBlock("TA 的日记", "把今天看见的你，轻轻写下来。", R.drawable.ic_heart_wave, this::showDiaryHomePage), marginBottom(7));
         root.addView(guardSettingBlock("归电", "很久没回来时，" + AppPrefs.companionName(this) + "来敲门", R.drawable.ic_clock, drawerGuidian), marginBottom(7));
-        root.addView(actionSettingBlock("看见", "查看屏幕并回应此刻", R.drawable.ic_eye, this::testScreenshot), marginBottom(10));
+        root.addView(actionSettingBlock("看见", "一起看视频 · 录12秒，或截当前屏幕一张", R.drawable.ic_eye, this::showSeeChooser), marginBottom(10));
         return root;
+    }
+
+    /**
+     * The visible 看见 card is built dynamically by buildCompanionMagazine().
+     * Never trigger screenshot immediately here; let the user explicitly choose.
+     */
+    private void showSeeChooser() {
+        new AlertDialog.Builder(this)
+            .setTitle("看见 · 选择要分享的内容")
+            .setItems(new String[]{
+                "一起看 · 去 X 或其他应用录12秒",
+                "只截当前屏幕这一张"
+            }, (dialog, option) -> {
+                if (option == 0) {
+                    startActivity(new Intent(this, TogetherWatchActivity.class));
+                } else {
+                    testScreenshot();
+                }
+            })
+            .setNegativeButton("取消", null)
+            .show();
     }
 
     private void showCompanionHomePage() {

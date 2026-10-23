@@ -61,18 +61,18 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aevren-android-v0.3.9.7
-          path: android/Zhangxinchuang-public-v0.3.9.7.apk
+          name: aevren-android-v0.3.9.8
+          path: android/Zhangxinchuang-public-v0.3.9.8.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.9.7
-          name: 砚团 v0.3.9.7
+          tag_name: v0.3.9.8
+          name: 砚团 v0.3.9.8
           body: |
-            在「看见」页新增醒目的「一起看 · 去 X/其他应用录12秒」按钮，与只上传单张截图的按钮明确区分，防止误触上传自己的页面。
+            修复「看见」动态入口直接上传截图的问题；选择录屏后，X 和其他应用两个选项会正常显示。
             构建来源：${{ github.sha }}
-          files: android/Zhangxinchuang-public-v0.3.9.7.apk
+          files: android/Zhangxinchuang-public-v0.3.9.8.apk
           fail_on_unmatched_files: true
