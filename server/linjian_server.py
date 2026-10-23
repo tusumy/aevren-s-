@@ -635,6 +635,9 @@ class Handler(BaseHTTPRequestHandler):
             self.state.unlock_requests.append(data)
             self.state.unlock_requests = self.state.unlock_requests[-50:]
             self._json(200, {"ok": True, "request": data, "count": len(self.state.unlock_requests)}); return
+        if path == "/api/watch/stop":
+            if not self._require_token(): return
+            self._stop_watch_session(); return
         if path in ("/api/watch/frame", "/api/watch/audio"):
             if not self._require_token(): return
             self._handle_watch_media(path.endswith("/audio")); return
@@ -669,11 +672,30 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, OSError):
             return None
 
+    def _stop_watch_session(self) -> None:
+        sid = parse_qs(urlparse(self.path).query).get("session_id", [""])[0]
+        if not re.fullmatch(r"[0-9a-f-]{36}", sid):
+            self._json(400, {"ok": False, "error": "invalid_watch_session"}); return
+        with self.state.watch_lock:
+            latest = self._watch_meta()
+            if latest and latest.get("session_id") == sid:
+                folder = self.state.watch_dir / sid
+                if folder.is_dir() and folder.parent == self.state.watch_dir:
+                    for file in folder.iterdir():
+                        if file.is_file(): file.unlink(missing_ok=True)
+                    try: folder.rmdir()
+                    except OSError: pass
+                (self.state.watch_dir / "latest.json").unlink(missing_ok=True)
+        self._json(200, {"ok": True, "stopped": True})
+
     def _handle_watch_media(self, audio: bool) -> None:
         qs = parse_qs(urlparse(self.path).query)
         sid = qs.get("session_id", [""])[0]
         index = qs.get("index", [""])[0]
-        if not re.fullmatch(r"[0-9a-f-]{36}", sid) or (not audio and (not index.isdigit() or int(index) > 5)):
+        sequence = qs.get("sequence", [index])[0]
+        if not re.fullmatch(r"[0-9a-f-]{36}", sid) or (not audio and (
+                not index.isdigit() or int(index) > 5 or
+                not sequence.isdigit() or int(sequence) > 2_147_483_647)):
             self._json(400, {"ok": False, "error": "invalid_watch_session_or_frame"}); return
         mime = (self.headers.get("Content-Type") or "").split(";")[0]
         if mime != ("audio/wav" if audio else "image/jpeg"):
@@ -689,13 +711,20 @@ class Handler(BaseHTTPRequestHandler):
             latest = self._watch_meta()
             if not latest or latest.get("session_id") != sid:
                 latest = {"ok": True, "session_id": sid, "device_id": qs.get("device_id", [DEFAULT_DEVICE])[0],
-                          "captured_at": now_iso(), "frames": [], "audio_uploaded": False}
+                          "captured_at": now_iso(), "frames": [], "frame_sequence": {},
+                          "active": True, "audio_uploaded": False}
             folder = self.state.watch_dir / sid
             folder.mkdir(parents=True, exist_ok=True)
             (folder / ("audio.wav" if audio else "frame_" + index + ".jpg")).write_bytes(raw)
             if audio: latest["audio_uploaded"] = True
-            elif int(index) not in latest["frames"]: latest["frames"].append(int(index))
-            latest["frames"].sort()
+            else:
+                order = latest.setdefault("frame_sequence", {})
+                if int(sequence) < int(order.get(index, -1)):
+                    self._json(409, {"ok": False, "error": "stale_watch_frame"}); return
+                order[index] = int(sequence)
+                if int(index) not in latest["frames"]: latest["frames"].append(int(index))
+                latest["frames"].sort(key=lambda frame: int(order.get(str(frame), frame)))
+            latest["active"] = True
             latest["updated_epoch"] = time.time()
             latest["updated_at"] = now_iso()
             (self.state.watch_dir / "latest.json").write_text(json.dumps(latest, ensure_ascii=False), encoding="utf-8")
